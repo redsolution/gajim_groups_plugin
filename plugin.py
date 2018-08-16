@@ -157,6 +157,14 @@ class XabberGroupsPlugin(GajimPlugin):
             return
 
 
+<<<<<<< HEAD
+=======
+# TODO save avatars: base64 -> img
+
+# TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
+>>>>>>> 33df750f7023927e671a593570feb087152f25d2
+
+# TODO fix cyrillic
 
 class Base(object):
 
@@ -225,6 +233,7 @@ class Base(object):
             repl_start = buffer_.create_mark(None, iter_, True)
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
             app.thread_interface(self._update_avatar, [self.default_avatar, repl_start])
+<<<<<<< HEAD
 
             # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
 
@@ -241,6 +250,20 @@ class Base(object):
         buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
         # TODO fix cyrillic
+=======
+
+            # nickname
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+        # message
+        start_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.insert_interactive(iter_, message, len(message), True)
+        end_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+>>>>>>> 33df750f7023927e671a593570feb087152f25d2
 
     def _get_at_end(self):
         try:
