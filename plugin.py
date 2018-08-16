@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import logging
 import uuid
 import nbxmpp
@@ -135,9 +136,11 @@ class XabberGroupsPlugin(GajimPlugin):
 
 # TODO list of xabber groupchats
 
-# TODO save avatars
+# TODO save avatars: base64 -> img
 
 # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
+
+# TODO fix cyrillic
 
 class Base(object):
 
@@ -146,9 +149,13 @@ class Base(object):
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
-        self.prelatest_mark = None
-        self.latest_mark = None
-        self.default_avatar = '/home/maksim.batyatin/.local/share/gajim/plugins/groups_plugin/pics/default.jpg'
+        self.default_avatar = '.local/share/gajim/plugins/groups_plugin/pics/default.jpg'
+        self.previous_message_from = ':'
+        # styles
+        self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
+        self.nickname_color.set_property("size_points", 10)
+        self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
+        self.text_style.set_property("left-margin", 32)
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -160,20 +167,60 @@ class Base(object):
 
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
+        print(text_tags)
+        print(additional_data)
+
+        self.textview.plugin_modified = True
+        SAME_FROM = False
+        nickname = ''
+        message = ''
+
+        # split person name and messasge
+        if 'incomingtxt' in text_tags:
+            splittext = real_text.partition(':')
+            nickname = splittext[0]+':'
+            message = '\n'+splittext[2].replace('\n', '')
+        elif 'outgoingtxt' in text_tags:
+            nickname = 'me:'
+            message = '\n'+real_text
+
+        # check if new message is from same person
+        if nickname == 'me:':
+            if self.previous_message_from == None:
+                SAME_FROM = True
+            self.previous_message_from = None
+        elif self.previous_message_from == nickname:
+            SAME_FROM = True
+        else:
+            self.previous_message_from = nickname
+
+
+
         buffer_ = self.textview.tv.get_buffer()
         if not iter_:
             iter_ = buffer_.get_end_iter()
 
-        # Show [avatar] until avatar loaded. do we need it?
-        ttt = buffer_.get_tag_table()
-        repl_start = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_with_tags(iter_, '[avatar]',
-                                 *[(ttt.lookup(t) if isinstance(t, str) else t) for t in ["url"]])
-        repl_end = buffer_.create_mark(None, iter_, True)
+        lineindex = buffer_.get_line_count() - 1
+        prevline = buffer_.get_iter_at_line(lineindex)
+        buffer_.delete(prevline, iter_)
 
-        # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-        app.thread_interface(self._update_avatar, [self.default_avatar, repl_start, repl_end])
+        if not SAME_FROM:
+            # avatar
+            repl_start = buffer_.create_mark(None, iter_, True)
+            # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
+            app.thread_interface(self._update_avatar, [self.default_avatar, repl_start])
 
+            # nickname
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+        # message
+        start_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.insert_interactive(iter_, message, len(message), True)
+        end_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
     def _get_at_end(self):
         try:
@@ -191,7 +238,7 @@ class Base(object):
             # Gajim 1.0.1
             self.textview.scroll_to_end()
 
-    def _update_avatar(self, pixbuf, repl_start, repl_end):
+    def _update_avatar(self, pixbuf, repl_start):
 
         event_box = Gtk.EventBox()
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, True)
@@ -220,8 +267,6 @@ class Base(object):
                 event_box.add(image)
                 event_box.show_all()
                 self.textview.tv.add_child_at_anchor(event_box, anchor)
-                buffer_.delete(iter_,
-                               buffer_.get_iter_at_mark(repl_end))
 
                 if at_end:
                     self._scroll_to_end()
