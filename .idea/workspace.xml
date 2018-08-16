@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="f5a4dab6-02dc-46ab-9fe3-d8004fc7ccb2" name="Default" comment="" />
+    <list default="true" id="f5a4dab6-02dc-46ab-9fe3-d8004fc7ccb2" name="Default" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/plugin.py" beforeDir="false" afterPath="$PROJECT_DIR$/plugin.py" afterDir="false" />
+    </list>
     <ignored path="groups_plugin.iws" />
     <ignored path=".idea/workspace.xml" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -18,20 +22,21 @@
       <usages-collector id="statistics.lifecycle.project">
         <counts>
           <entry key="project.closed" value="1" />
+          <entry key="project.open.time.11" value="1" />
           <entry key="project.open.time.17" value="1" />
           <entry key="project.open.time.5" value="1" />
           <entry key="project.open.time.6" value="1" />
-          <entry key="project.opened" value="3" />
+          <entry key="project.opened" value="4" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="py" value="2281" />
+          <entry key="py" value="3547" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
-          <entry key="Python" value="2281" />
+          <entry key="Python" value="3547" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.open">
@@ -54,22 +59,14 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/plugin.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="99">
-              <caret line="171" column="57" lean-forward="true" selection-start-line="171" selection-start-column="57" selection-end-line="171" selection-end-column="57" />
+            <state relative-caret-position="270">
+              <caret line="177" column="40" selection-start-line="177" selection-start-column="40" selection-end-line="177" selection-end-column="40" />
               <folding>
                 <element signature="e#0#14#0" expanded="true" />
-                <element signature="e#1242#1592#0" />
-                <element signature="e#1689#2950#0" />
-                <element signature="e#3706#3972#0" />
-                <element signature="e#3916#4092#0" />
-                <element signature="e#4261#4445#0" />
-                <element signature="e#4597#4729#0" />
-                <element signature="e#4217#4712#0" />
-                <element signature="e#4300#4598#0" />
-                <element signature="e#6691#6868#0" />
-                <element signature="e#6908#7084#0" />
-                <marker date="1534337762162" expanded="true" signature="1727:1734" ph="..." />
-                <marker date="1534337762162" expanded="true" signature="7343:7352" ph="..." />
+                <element signature="e#7105#7281#0" />
+                <element signature="e#7352#8792#0" />
+                <marker date="1534416649615" expanded="true" signature="1751:1758" ph="..." />
+                <marker date="1534416649615" expanded="true" signature="9106:9115" ph="..." />
               </folding>
             </state>
           </provider>
@@ -78,8 +75,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$USER_HOME$/Загрузки/gajim-plugins-master/url_image_preview/url_image_preview.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="282">
-              <caret line="469" column="21" lean-forward="true" selection-start-line="469" selection-start-column="21" selection-end-line="469" selection-end-column="21" />
+            <state relative-caret-position="324">
+              <caret line="190" column="26" lean-forward="true" selection-start-line="190" selection-start-column="26" selection-end-line="190" selection-end-column="26" />
               <folding>
                 <element signature="e#631#640#0" expanded="true" />
               </folding>
@@ -90,7 +87,7 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$USER_HOME$/Загрузки/gajim-plugins-master/tictactoe/plugin.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="990">
+            <state relative-caret-position="787">
               <caret line="363" selection-start-line="363" selection-end-line="363" />
               <folding>
                 <element signature="e#886#899#0" expanded="true" />
@@ -107,6 +104,9 @@
         <option value="Python Script" />
       </list>
     </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
@@ -139,6 +139,7 @@
       </profile-state>
     </entry>
   </component>
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectView">
     <navigator proportions="" version="1">
       <foldersAlwaysOnTop value="true" />
@@ -239,9 +240,9 @@
     <frame x="67" y="25" width="1213" height="999" extended-state="6" />
     <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.14789917" />
+      <window_info content_ui="combo" id="Project" order="0" sideWeight="0.49914238" visible="true" weight="0.14789917" />
       <window_info id="Structure" order="1" weight="0.25" />
-      <window_info id="Favorites" order="2" side_tool="true" />
+      <window_info id="Favorites" order="2" sideWeight="0.50085765" side_tool="true" weight="0.14789917" />
       <window_info anchor="bottom" id="Message" order="0" />
       <window_info anchor="bottom" id="Find" order="1" weight="0.3295063" />
       <window_info anchor="bottom" id="Run" order="2" weight="0.3289183" />
@@ -249,7 +250,7 @@
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
       <window_info anchor="bottom" id="TODO" order="6" />
-      <window_info anchor="bottom" id="Version Control" order="7" show_stripe_button="false" />
+      <window_info active="true" anchor="bottom" id="Version Control" order="7" visible="true" weight="0.0" />
       <window_info anchor="bottom" id="Python Console" order="8" />
       <window_info anchor="bottom" id="Terminal" order="9" />
       <window_info anchor="bottom" id="Event Log" order="10" side_tool="true" weight="0.3295063" />
@@ -257,6 +258,32 @@
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
       <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
     </layout>
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="RECENTLY_FILTERED_USER_GROUPS">
+                <collection />
+              </option>
+              <option name="RECENTLY_FILTERED_BRANCH_GROUPS">
+                <collection />
+              </option>
+              <option name="COLUMN_ORDER">
+                <list>
+                  <option value="0" />
+                  <option value="1" />
+                  <option value="2" />
+                  <option value="3" />
+                </list>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="Vcs.Log.UiProperties">
     <option name="RECENTLY_FILTERED_USER_GROUPS">
@@ -273,7 +300,7 @@
     <entry file="file://$PROJECT_DIR$/historyDb.py" />
     <entry file="file://$USER_HOME$/Загрузки/gajim-plugins-master/tictactoe/plugin.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="990">
+        <state relative-caret-position="787">
           <caret line="363" selection-start-line="363" selection-end-line="363" />
           <folding>
             <element signature="e#886#899#0" expanded="true" />
@@ -283,8 +310,8 @@
     </entry>
     <entry file="file://$USER_HOME$/Загрузки/gajim-plugins-master/url_image_preview/url_image_preview.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="282">
-          <caret line="469" column="21" lean-forward="true" selection-start-line="469" selection-start-column="21" selection-end-line="469" selection-end-column="21" />
+        <state relative-caret-position="324">
+          <caret line="190" column="26" lean-forward="true" selection-start-line="190" selection-start-column="26" selection-end-line="190" selection-end-column="26" />
           <folding>
             <element signature="e#631#640#0" expanded="true" />
           </folding>
@@ -293,22 +320,14 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/plugin.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="99">
-          <caret line="171" column="57" lean-forward="true" selection-start-line="171" selection-start-column="57" selection-end-line="171" selection-end-column="57" />
+        <state relative-caret-position="270">
+          <caret line="177" column="40" selection-start-line="177" selection-start-column="40" selection-end-line="177" selection-end-column="40" />
           <folding>
             <element signature="e#0#14#0" expanded="true" />
-            <element signature="e#1242#1592#0" />
-            <element signature="e#1689#2950#0" />
-            <element signature="e#3706#3972#0" />
-            <element signature="e#3916#4092#0" />
-            <element signature="e#4261#4445#0" />
-            <element signature="e#4597#4729#0" />
-            <element signature="e#4217#4712#0" />
-            <element signature="e#4300#4598#0" />
-            <element signature="e#6691#6868#0" />
-            <element signature="e#6908#7084#0" />
-            <marker date="1534337762162" expanded="true" signature="1727:1734" ph="..." />
-            <marker date="1534337762162" expanded="true" signature="7343:7352" ph="..." />
+            <element signature="e#7105#7281#0" />
+            <element signature="e#7352#8792#0" />
+            <marker date="1534416649615" expanded="true" signature="1751:1758" ph="..." />
+            <marker date="1534416649615" expanded="true" signature="9106:9115" ph="..." />
           </folding>
         </state>
       </provider>
