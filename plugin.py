@@ -13,6 +13,12 @@ from gajim.common import app
 from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
+import os.path
+import sqlite3
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+db_path = os.path.join(BASE_DIR, ".local/share/gajim/plugins/groups_plugin/xabbergc.db")
+DB = sqlite3.connect(db_path)
 
 log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
 # namespaces
@@ -85,11 +91,27 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
-        myjid = obj.stanza.getAttr('to')
-        myjid = app.get_jid_without_resource(str(myjid))
-        newbody = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('body')
-        nickname = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname')
+        jid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid')
+        room = obj.jid
+        name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname')
+        id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('id')
+        role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role')
+        badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge')
 
+        cursor = DB.cursor()
+        cursor.execute("SELECT EXISTS(SELECT * from gcs where jid = ? and room = ? and name = ? )", (jid, room, name))
+        #  пользователь существует в бд
+        if cursor.fetchone():
+            print("Found!")
+        # пользователя соответственно нема, записиваем его в бд
+
+        # TODO FIX list of xabber groupchats
+        else:
+            cursor.execute("INSERT INTO gcs (jid, room, name, id, role, badge) "
+                           "values (?, ?, ?, ?, ?, ?)", (jid, room, name, id, role, badge))
+            print("Created!")
+
+            # TODO save avatars: base64 -> img
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
@@ -134,13 +156,7 @@ class XabberGroupsPlugin(GajimPlugin):
                 real_text, text_tags, graphics, iter_, additional_data)
             return
 
-# TODO list of xabber groupchats
 
-# TODO save avatars: base64 -> img
-
-# TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
-
-# TODO fix cyrillic
 
 class Base(object):
 
@@ -210,6 +226,8 @@ class Base(object):
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
             app.thread_interface(self._update_avatar, [self.default_avatar, repl_start])
 
+            # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
+
             # nickname
             start_iter = buffer_.create_mark(None, iter_, True)
             buffer_.insert_interactive(iter_, nickname, len(nickname), True)
@@ -221,6 +239,8 @@ class Base(object):
         buffer_.insert_interactive(iter_, message, len(message), True)
         end_iter = buffer_.create_mark(None, iter_, True)
         buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+        # TODO fix cyrillic
 
     def _get_at_end(self):
         try:
