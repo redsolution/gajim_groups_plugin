@@ -13,17 +13,16 @@ from gajim.common import app
 from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
-import os.path
-import sqlite3
+import base64, os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(BASE_DIR, ".local/share/gajim/plugins/groups_plugin/xabbergc.db")
-DB = sqlite3.connect(db_path)
-
-log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
-# namespaces
-XABBER_GC = 'http://xabber.com/protocol/groupchat'
 allowjids = ['4test2@xmppdev01.xabber.com']
+avatardata = []
+
+# namespaces & logger
+log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
+XABBER_GC = 'http://xabber.com/protocol/groupchat'
+XABBER_GC_invite = 'http://xabber.com/protocol/groupchat#invite'
+
 
 class XabberGroupsPlugin(GajimPlugin):
 
@@ -44,10 +43,20 @@ class XabberGroupsPlugin(GajimPlugin):
             'print_real_text': (self.print_real_text, None),
         }
 
+    @staticmethod
+    def base64_to_image(img_base64, filename):
+        # decode base, return realpath
+        imgdata = base64.b64decode(img_base64)
+        realfilename = os.path.abspath(filename + '.jpg')
+        filename = filename + '.jpg'
+        with open(filename, 'wb') as f:
+            f.write(imgdata)
+        return (realfilename)
+
     @log_calls('XabberGroupsPlugin')
     def _nec_decrypted_message_received(self, obj):
         '''
-        get incoming message, check it, do smth with them
+        get incoming messages, check it, do smth with them
         '''
         cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
@@ -55,7 +64,6 @@ class XabberGroupsPlugin(GajimPlugin):
             self.invite_to_chatroom_recieved(obj)
         elif cr_message:
             self.xabber_message_recieved(obj)
-
 
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):  
@@ -79,7 +87,7 @@ class XabberGroupsPlugin(GajimPlugin):
             return
 
         name = obj.jid
-        reason = obj.stanza.getTag('reason', namespace = XABBER_GC )
+        reason = obj.stanza.getTag('invite', namespace=XABBER_GC).getTag('reason').getData()
         pritext = _('invitation to xabber-chatroom')
         sectext = _('%(name)s  invites you to xabber chatroom. \n'
                     'Room: %(jid)s \n'
@@ -91,27 +99,118 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
-        jid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid')
+        jid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
         room = obj.jid
-        name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname')
-        id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('id')
-        role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role')
-        badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge')
+        name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+        id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
+        id = id.getTag('info').getAttr('id')
+        role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
+        badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
 
-        cursor = DB.cursor()
-        cursor.execute("SELECT EXISTS(SELECT * from gcs where jid = ? and room = ? and name = ? )", (jid, room, name))
+        # hotfix list with personal data
+        # remake db
+        ISEXIST = False
+        print(avatardata)
+        for avList in avatardata:
+            if (avList[0] == jid) and (avList[1] == room) and (avList[2] == name):
+                print("PERSON IS ALREADY EXIST")
+                ISEXIST = True
+        if not ISEXIST:
+            avatardata.append([jid, room, name, id, role, badge])
+            print("PERSON ADDED")
+
+
+            accounts = app.contacts.get_accounts()
+            myjid = obj.stanza.getAttr('to')
+            for account in accounts:
+                realjid = app.get_jid_from_account(account)
+                realjid = app.get_jid_without_resource(str(realjid))
+                if myjid == realjid:
+                    stanza_send = nbxmpp.Iq(to=room, typ='get', frm=realjid)
+                    stanza_send.setAttr('id', str(name))
+                    stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
+                    stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+jid))
+                    stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(id))
+                    app.connections[account].connection.send(stanza_send, now=True)
+
+        # TODO recieve data
+
+        print('AVARATDATA')
+        for avList in avatardata:
+            print(avList)
+
+        """
+    @log_calls('XabberGroupsPlugin')
+    def ask_for_single_avatar(self):
+        return 
+        <iq type='get' from='romeo@montague.it/home' to='mychat@capulet.it' id='retrieve1'>
+          <pubsub xmlns='http://jabber.org/protocol/pubsub'>
+            <items node='urn:xmpp:avatar:data#juliet@capulet.it'>
+              <item id='74c4ecf80b09aa4f7c58f5563db80f8251289898'/>
+            </items>
+          </pubsub>
+        </iq>
+        
+        
+        <message from='mychat@capulet.it' to='romeo@montague.it'>
+          <x xmlns='http://xabber.com/protocol/groupchat'>
+            <user>
+              <id>1lgfukgiyx3ged09</id>
+              <jid>juliet@capulet.it</jid>
+              <nickname>Juliet</nickname>
+              <metadata xmlns='urn:xmpp:avatar:metadata'>
+                <info
+                  bytes='12345'
+                  height='64'
+                  id='74c4ecf80b09aa4f7c58f5563db80f8251289898'
+                  type='image/png'
+                  width='64' />
+              </metadata>
+            </user>
+            <message>Go to the garden</message>
+          </x>
+          <body xml:lang='en'>Juliet:\nGo to the garden</body>
+        </message>
+        
+        
+        
+        <message from='4test2@xmppdev01.xabber.com' to='devmuler@jabber.ru' type='chat' id='d95f0fd1-c9a4-44a6-ac7d-2392c508e2cc'>
+        <x xmlns='http://xabber.com/protocol/groupchat'>
+        <id>rhbxg9rjitipwzdu</id>
+        <jid>maksim.batyatin@redsolution.com</jid>
+        <badge/>
+        <nickname>Batyatin Maksim</nickname>
+        <role>owner</role>
+        <metadata xmlns='urn:xmpp:avatar:metadata'>
+        <info width='64' height='64' type='image/jpeg' id='6b1798ba95a83d0c80221f18a1b00d95a2fc2f7a' bytes='16022'/>
+        </metadata>
+        <body xmlns='urn:ietf:params:xml:ns:xmpp-streams' xml:lang=''>HELLOUUUUUUU</body>
+        </x>
+        <markable xmlns='urn:xmpp:chat-markers:0'/>
+        <body xml:lang='en'>Batyatin Maksim: 
+        HELLOUUUUUUU</body>
+        </message>
+
+
+
+        cursor = avatardatabase.DB.cursor()
+        cursor.execute('''SELECT EXISTS(SELECT * from gcs where
+        jid = ? and
+        room = ? and
+        name = ? );''', (str(jid), str(room), str(name)))
         #  пользователь существует в бд
         if cursor.fetchone():
-            print("Found!")
-        # пользователя соответственно нема, записиваем его в бд
+            print("Found!\n"*50)
 
         # TODO FIX list of xabber groupchats
         else:
+            # пользователя соответственно нема, записиваем его в бд
             cursor.execute("INSERT INTO gcs (jid, room, name, id, role, badge) "
                            "values (?, ?, ?, ?, ?, ?)", (jid, room, name, id, role, badge))
-            print("Created!")
+            print("Created!\n"*50)
 
             # TODO save avatars: base64 -> img
+        """
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
@@ -157,14 +256,6 @@ class XabberGroupsPlugin(GajimPlugin):
             return
 
 
-<<<<<<< HEAD
-=======
-# TODO save avatars: base64 -> img
-
-# TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
->>>>>>> 33df750f7023927e671a593570feb087152f25d2
-
-# TODO fix cyrillic
 
 class Base(object):
 
@@ -173,13 +264,22 @@ class Base(object):
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
-        self.default_avatar = '.local/share/gajim/plugins/groups_plugin/pics/default.jpg'
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        self.default_avatar = os.path.join(BASE_DIR, "default.jpg")
+        # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
+
         self.previous_message_from = ':'
+
         # styles
         self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
         self.nickname_color.set_property("size_points", 10)
+
         self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
         self.text_style.set_property("left-margin", 32)
+
+        self.infostyle = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
+        self.infostyle.set_property("foreground", "grey")
+        self.infostyle.set_property("size_points", 8)
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -196,6 +296,8 @@ class Base(object):
 
         self.textview.plugin_modified = True
         SAME_FROM = False
+        IS_MSG = True
+        if real_text.partition(':')[2] == '': IS_MSG = False
         nickname = ''
         message = ''
 
@@ -209,14 +311,15 @@ class Base(object):
             message = '\n'+real_text
 
         # check if new message is from same person
-        if nickname == 'me:':
-            if self.previous_message_from == None:
+        if nickname != '':
+            if nickname == 'me:':
+                if self.previous_message_from == None:
+                    SAME_FROM = True
+                self.previous_message_from = None
+            elif self.previous_message_from == nickname:
                 SAME_FROM = True
-            self.previous_message_from = None
-        elif self.previous_message_from == nickname:
-            SAME_FROM = True
-        else:
-            self.previous_message_from = nickname
+            else:
+                self.previous_message_from = nickname
 
 
 
@@ -228,42 +331,33 @@ class Base(object):
         prevline = buffer_.get_iter_at_line(lineindex)
         buffer_.delete(prevline, iter_)
 
-        if not SAME_FROM:
-            # avatar
-            repl_start = buffer_.create_mark(None, iter_, True)
-            # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-            app.thread_interface(self._update_avatar, [self.default_avatar, repl_start])
-<<<<<<< HEAD
+        if IS_MSG:
+            if not SAME_FROM:
+                # avatar
+                repl_start = buffer_.create_mark(None, iter_, True)
+                # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
+                app.thread_interface(self._update_avatar, [self.default_avatar, repl_start])
 
-            # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
+                # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
 
-            # nickname
+                # nickname
+                start_iter = buffer_.create_mark(None, iter_, True)
+                buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+                end_iter = buffer_.create_mark(None, iter_, True)
+                buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # message
             start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+            buffer_.insert_interactive(iter_, message, len(message), True)
             end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
-        # message
-        start_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_interactive(iter_, message, len(message), True)
-        end_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-        # TODO fix cyrillic
-=======
-
-            # nickname
+            # TODO fix cyrillic
+        else:
             start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+            buffer_.insert_interactive(iter_, real_text, len(real_text), True)
             end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-        # message
-        start_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_interactive(iter_, message, len(message), True)
-        end_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
->>>>>>> 33df750f7023927e671a593570feb087152f25d2
+            buffer_.apply_tag(self.infostyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
     def _get_at_end(self):
         try:
@@ -285,6 +379,8 @@ class Base(object):
 
         event_box = Gtk.EventBox()
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, True)
+        # pixbuf = base64.b64decode(pixbuf)
+        # pixbuf = GdkPixbuf.Pixbuf.from_data(pixbuf)
 
         def add_to_textview():
             try:
