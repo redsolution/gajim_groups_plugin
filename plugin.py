@@ -60,8 +60,8 @@ class XabberGroupsPlugin(GajimPlugin):
     def _nec_iq_received(self, obj):
         print('алярма, новй айкъю пришёль \n'*10)
         # check is iq from xabber gc
-        id = obj.stanza.getAttr('id')
-        items = obj.stanza.getTag('pubsub', 'items').getData()
+        id = obj.getAttr('id')
+        items = obj.stanza.getTag('pubsub').getTag('items').getData()
         if items:
             base64avatar = items.getTag('data', namespace='urn:xmpp:avatar:data')
             avatar_loc = self.base64_to_image(base64avatar, id)
@@ -122,8 +122,11 @@ class XabberGroupsPlugin(GajimPlugin):
         if not name:
             name = False
         message = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('body').getData()
-        id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
-        id = id.getTag('info').getAttr('id')
+        id = ''
+        try:
+            id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
+            id = id.getTag('info').getAttr('id')
+        except: id = 'unknown'
         role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
         badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
 
@@ -324,15 +327,12 @@ class Base(object):
                 self.handlers[i].disconnect(i)
             del self.handlers[i]
 
-    def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, avatar_id):
+    def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
         if not SAME_FROM:
             # avatar
-            if not os.path.exists(os.path.abspath(avatar_id)):
-                avatar_id = self.default_avatar
-            # placement
             avatar_placement = buffer_.create_mark(None, iter_, True)
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-            app.thread_interface(self._update_avatar, [avatar_id, avatar_placement])
+            app.thread_interface(self._update_avatar, [self.default_avatar, avatar_placement, additional_data])
 
             # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
 
@@ -381,16 +381,12 @@ class Base(object):
         print(type(additional_data))
 
         if 'incomingtxt' in text_tags:
-            try:
-                writer_jid = additional_data['jid']
-                nickname = additional_data['nickname']
-                message = additional_data['message']
-                avatar_id = additional_data['av_id']
-                role = additional_data['role']
-                badge = additional_data['badge']
-                self.textview.plugin_modified = True
-            except:
-                print('еррор')
+            writer_jid = additional_data['jid']
+            nickname = additional_data['nickname']
+            message = additional_data['message']
+            avatar_id = additional_data['av_id']
+            role = additional_data['role']
+            badge = additional_data['badge']
 
         if 'outgoingtxt' in text_tags:
             nickname = 'me'
@@ -423,13 +419,14 @@ class Base(object):
 
         # delete old "[time] name: "
         if nickname:
+            self.textview.plugin_modified = True
             lineindex = buffer_.get_line_count() - 1
             prevline = buffer_.get_iter_at_line(lineindex)
             buffer_.delete(prevline, iter_)
 
 
         if IS_MSG:
-            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, avatar_id)
+            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
         else:
             self.print_server_info(iter_, buffer_, real_text)
 
@@ -451,9 +448,13 @@ class Base(object):
             # Gajim 1.0.1
             self.textview.scroll_to_end()
 
-    def _update_avatar(self, pixbuf, repl_start):
+    def on_button_press_event(self, pr, gl, hf):
+        print(pr)
+
+    def _update_avatar(self, pixbuf, repl_start, additional_data):
 
         event_box = Gtk.EventBox()
+        event_box.connect('button-press-event', self.on_button_press_event, "TRIGGERED!!!!")
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, True)
         # pixbuf = base64.b64decode(pixbuf)
         # pixbuf = GdkPixbuf.Pixbuf.from_data(pixbuf)
