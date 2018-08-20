@@ -36,7 +36,10 @@ class XabberGroupsPlugin(GajimPlugin):
 
         self.events_handlers = {
             'decrypted-message-received': (ged.PREGUI1,
-                                           self._nec_decrypted_message_received)}
+                                           self._nec_decrypted_message_received),
+            'raw-iq-received': (ged.CORE,
+                                            self._nec_iq_received)
+        }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
                                        self.disconnect_from_chat_control),
@@ -52,6 +55,18 @@ class XabberGroupsPlugin(GajimPlugin):
         with open(filename, 'wb') as f:
             f.write(imgdata)
         return (realfilename)
+
+    @log_calls('XabberGroupsPlugin')
+    def _nec_iq_received(self, obj):
+        print('алярма, новй айкъю пришёль \n'*10)
+        # check is iq from xabber gc
+        id = obj.stanza.getAttr('id')
+        items = obj.stanza.getTag('pubsub', 'items').getData()
+        if items:
+            base64avatar = items.getTag('data', namespace='urn:xmpp:avatar:data')
+            avatar_loc = self.base64_to_image(base64avatar, id)
+            print(avatar_loc)
+
 
     @log_calls('XabberGroupsPlugin')
     def _nec_decrypted_message_received(self, obj):
@@ -100,12 +115,25 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
         jid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
+        if not jid:
+            jid = None
         room = obj.jid
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+        if not name:
+            name = False
+        message = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('body').getData()
         id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
         id = id.getTag('info').getAttr('id')
         role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
         badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
+
+        obj.additional_data.update({'jid': jid,
+                                    'nickname': name,
+                                    'message': message,
+                                    'av_id': id,
+                                    'role': role,
+                                    'badge': badge
+                                    })
 
         # hotfix list with personal data
         # remake db
@@ -119,7 +147,7 @@ class XabberGroupsPlugin(GajimPlugin):
             avatardata.append([jid, room, name, id, role, badge])
             print("PERSON ADDED")
 
-
+            # send request for avatars
             accounts = app.contacts.get_accounts()
             myjid = obj.stanza.getAttr('to')
             for account in accounts:
@@ -127,11 +155,12 @@ class XabberGroupsPlugin(GajimPlugin):
                 realjid = app.get_jid_without_resource(str(realjid))
                 if myjid == realjid:
                     stanza_send = nbxmpp.Iq(to=room, typ='get', frm=realjid)
-                    stanza_send.setAttr('id', str(name))
+                    stanza_send.setAttr('id', str(id))
                     stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
                     stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+jid))
                     stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(id))
                     app.connections[account].connection.send(stanza_send, now=True)
+                    return
 
         # TODO recieve data
 
@@ -268,7 +297,7 @@ class Base(object):
         self.default_avatar = os.path.join(BASE_DIR, "default.jpg")
         # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
 
-        self.previous_message_from = ':'
+        self.previous_message_from = None
 
         # styles
         self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
@@ -277,9 +306,15 @@ class Base(object):
         self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
         self.text_style.set_property("left-margin", 32)
 
-        self.infostyle = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
-        self.infostyle.set_property("foreground", "grey")
-        self.infostyle.set_property("size_points", 8)
+        self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
+        self.info_style.set_property("foreground", "grey")
+        self.info_style.set_property("left-margin", 64)
+
+        self.rolestyle = self.textview.tv.get_buffer().create_tag("role_text", size_points=10)
+        self.rolestyle.set_property("foreground", "black")
+
+        self.badgestyle = self.textview.tv.get_buffer().create_tag("badge_text", size_points=8)
+        self.badgestyle.set_property("foreground", "grey")
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -289,37 +324,96 @@ class Base(object):
                 self.handlers[i].disconnect(i)
             del self.handlers[i]
 
+    def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, avatar_id):
+        if not SAME_FROM:
+            # avatar
+            if not os.path.exists(os.path.abspath(avatar_id)):
+                avatar_id = self.default_avatar
+            # placement
+            avatar_placement = buffer_.create_mark(None, iter_, True)
+            # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
+            app.thread_interface(self._update_avatar, [avatar_id, avatar_placement])
+
+            # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
+
+            # nickname
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # role
+            role = " "+role
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, role, len(role), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # badge
+            badge = " "+badge
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, badge, len(badge), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.badgestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+
+        # message
+        start_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.insert_interactive(iter_, message, len(message), True)
+        end_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+    def print_server_info(self, iter_, buffer_, info_message):
+        buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+        start_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.insert_interactive(iter_, info_message, len(info_message), True)
+        end_iter = buffer_.create_mark(None, iter_, True)
+        buffer_.apply_tag(self.info_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
-        print(text_tags)
+
+
+        print("additional data ok da")
         print(additional_data)
+        print(type(additional_data))
 
-        self.textview.plugin_modified = True
-        SAME_FROM = False
-        IS_MSG = True
-        if real_text.partition(':')[2] == '': IS_MSG = False
-        nickname = ''
-        message = ''
-
-        # split person name and messasge
         if 'incomingtxt' in text_tags:
-            splittext = real_text.partition(':')
-            nickname = splittext[0]+':'
-            message = '\n'+splittext[2].replace('\n', '')
-        elif 'outgoingtxt' in text_tags:
-            nickname = 'me:'
-            message = '\n'+real_text
+            try:
+                writer_jid = additional_data['jid']
+                nickname = additional_data['nickname']
+                message = additional_data['message']
+                avatar_id = additional_data['av_id']
+                role = additional_data['role']
+                badge = additional_data['badge']
+                self.textview.plugin_modified = True
+            except:
+                print('еррор')
 
-        # check if new message is from same person
-        if nickname != '':
-            if nickname == 'me:':
-                if self.previous_message_from == None:
-                    SAME_FROM = True
-                self.previous_message_from = None
-            elif self.previous_message_from == nickname:
+        if 'outgoingtxt' in text_tags:
+            nickname = 'me'
+            message = real_text
+            role = ""
+            badge = ""
+
+        SAME_FROM = False
+        IS_MSG = False
+        # if nickname is exist
+        if nickname:
+            IS_MSG = True
+
+        if 'outgoingtxt' in text_tags:
+            if self.previous_message_from == 'me':
                 SAME_FROM = True
             else:
-                self.previous_message_from = nickname
+                self.previous_message_from = 'me'
+        if 'incomingtxt' in text_tags:
+            if self.previous_message_from == writer_jid:
+                SAME_FROM = True
+            else:
+                self.previous_message_from = writer_jid
 
 
 
@@ -327,37 +421,19 @@ class Base(object):
         if not iter_:
             iter_ = buffer_.get_end_iter()
 
-        lineindex = buffer_.get_line_count() - 1
-        prevline = buffer_.get_iter_at_line(lineindex)
-        buffer_.delete(prevline, iter_)
+        # delete old "[time] name: "
+        if nickname:
+            lineindex = buffer_.get_line_count() - 1
+            prevline = buffer_.get_iter_at_line(lineindex)
+            buffer_.delete(prevline, iter_)
+
 
         if IS_MSG:
-            if not SAME_FROM:
-                # avatar
-                repl_start = buffer_.create_mark(None, iter_, True)
-                # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-                app.thread_interface(self._update_avatar, [self.default_avatar, repl_start])
-
-                # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
-
-                # nickname
-                start_iter = buffer_.create_mark(None, iter_, True)
-                buffer_.insert_interactive(iter_, nickname, len(nickname), True)
-                end_iter = buffer_.create_mark(None, iter_, True)
-                buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-            # message
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, message, len(message), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-            # TODO fix cyrillic
+            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, avatar_id)
         else:
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, real_text, len(real_text), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.infostyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            self.print_server_info(iter_, buffer_, real_text)
+
+        # TODO fix cyrillic
 
     def _get_at_end(self):
         try:
@@ -399,6 +475,9 @@ class Base(object):
                 css = '''#Xavatar {
                 box-shadow: 0px 0px 3px 0px alpha(@theme_text_color, 0.2);
                 margin: 0px;
+                border-radius: 16;
+                border-style: solid;
+                border-width: 1;
                 }'''
                 gtkgui_helpers.add_css_to_widget(image, css)
                 image.set_name('Xavatar')
@@ -410,7 +489,7 @@ class Base(object):
                 if at_end:
                     self._scroll_to_end()
             except Exception as ex:
-                log.exception("Exception while loading xavatar %s", ex)
+                log.exception("Exception while loading image %s", ex)
             return False
         # add to mainloop --> make call threadsafe
         GLib.idle_add(add_to_textview)
