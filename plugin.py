@@ -334,8 +334,6 @@ class Base(object):
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
             app.thread_interface(self._update_avatar, [self.default_avatar, avatar_placement, additional_data])
 
-            # TODO открывать окно с данными о собеседнике групчата при нажатии на аватар
-
             # nickname
             start_iter = buffer_.create_mark(None, iter_, True)
             buffer_.insert_interactive(iter_, nickname, len(nickname), True)
@@ -374,7 +372,7 @@ class Base(object):
 
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
-
+        nickname = None
 
         print("additional data ok da")
         print(additional_data)
@@ -448,13 +446,66 @@ class Base(object):
             # Gajim 1.0.1
             self.textview.scroll_to_end()
 
-    def on_button_press_event(self, pr, gl, hf):
-        print(pr)
+
+    def on_button_press_event(self, eb, event, additional_data):
+        isme = False
+        try:
+            h = additional_data['nickname']
+        except: isme = True
+
+        def on_ok():
+            return
+
+        def on_cancel():
+            return
+
+        # left click
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
+            if isme:
+                dialog = dialogs.NonModalConfirmationDialog('hello', sectext='it is your avatar',
+                    on_response_ok=on_ok, on_response_cancel=on_cancel)
+                dialog.popup()
+            else:
+                pritext = _('user data')
+                sectext = _('%(name)s  info. \n'
+                            'name: %(name)s \n'
+                            'role: %(role)s \n'
+                            'jid: %(jid)s \n'
+                            'avatar id: %(av_id)s \n'
+                            'two buttons exist:') % {'name': additional_data['nickname'],
+                                                     'role': additional_data['role'],
+                                                     'jid': additional_data['jid'],
+                                                     'av_id': additional_data['av_id']}
+                dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
+                    on_response_ok=on_ok, on_response_cancel=on_cancel)
+                dialog.popup()
+            print('left clicked\n'*10)
+
+        # right klick
+        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            dialog = dialogs.NonModalConfirmationDialog('hello', sectext='right clicked, yep?',
+                on_response_ok=on_ok, on_response_cancel=on_cancel)
+            dialog.popup()
+            print('right clicked\n'*10)
+
+    # Change mouse pointer to HAND2 when
+    # mouse enter the eventbox with the image
+    def on_enter_event(self, eb, event):
+        self.textview.tv.get_window(
+            Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.HAND2))
+
+    # Change mouse pointer to default when mouse leaves the eventbox
+    def on_leave_event(self, eb, event):
+        self.textview.tv.get_window(
+            Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
 
     def _update_avatar(self, pixbuf, repl_start, additional_data):
 
         event_box = Gtk.EventBox()
-        event_box.connect('button-press-event', self.on_button_press_event, "TRIGGERED!!!!")
+        event_box.connect('enter-notify-event', self.on_enter_event)
+        event_box.connect('leave-notify-event', self.on_leave_event)
+        event_box.connect('button-press-event', self.on_button_press_event, additional_data)
+
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, True)
         # pixbuf = base64.b64decode(pixbuf)
         # pixbuf = GdkPixbuf.Pixbuf.from_data(pixbuf)
