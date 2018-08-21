@@ -2,7 +2,9 @@
 import logging
 import uuid
 import nbxmpp
-from gi.repository import Gtk, Gdk, GLib, GdkPixbuf
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango
 
 from nbxmpp import simplexml
 from nbxmpp.protocol import JID
@@ -46,6 +48,22 @@ class XabberGroupsPlugin(GajimPlugin):
             'print_real_text': (self.print_real_text, None),
         }
 
+    '''
+    <presence from='4test2@xmppdev01.xabber.com' to='devmuler@jabber.ru/gajim.9F53IQTV'>
+    <x xmlns='http://xabber.com/protocol/groupchat'>
+    <jid>4test2@xmppdev01.xabber.com</jid>
+    <name>4test2</name>
+    <anonymous>false</anonymous>
+    <searchable>false</searchable>
+    <model>member-only</model>
+    <description>The best group chat</description>
+    <message>1534742075899437</message>
+    <contacts/>
+    <domains/>
+    </x>
+    </presence>
+    '''
+
     @staticmethod
     def base64_to_image(img_base64, filename):
         # decode base, return realpath
@@ -85,6 +103,8 @@ class XabberGroupsPlugin(GajimPlugin):
         myjid = obj.stanza.getAttr('to')
         myjid = app.get_jid_without_resource(str(myjid))
         jid = obj.stanza.getTag('invite', namespace=XABBER_GC).getAttr('jid')
+        if not jid:
+            jid = obj.stanza.getTag('invite', namespace=XABBER_GC).getTag('jid').getData()
 
         def on_ok():
             accounts = app.contacts.get_accounts()
@@ -137,7 +157,7 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'role': role,
                                     'badge': badge
                                     })
-
+        return
         # hotfix list with personal data
         # remake db
         ISEXIST = False
@@ -165,84 +185,9 @@ class XabberGroupsPlugin(GajimPlugin):
                     app.connections[account].connection.send(stanza_send, now=True)
                     return
 
-        # TODO recieve data
-
         print('AVARATDATA')
         for avList in avatardata:
             print(avList)
-
-        """
-    @log_calls('XabberGroupsPlugin')
-    def ask_for_single_avatar(self):
-        return 
-        <iq type='get' from='romeo@montague.it/home' to='mychat@capulet.it' id='retrieve1'>
-          <pubsub xmlns='http://jabber.org/protocol/pubsub'>
-            <items node='urn:xmpp:avatar:data#juliet@capulet.it'>
-              <item id='74c4ecf80b09aa4f7c58f5563db80f8251289898'/>
-            </items>
-          </pubsub>
-        </iq>
-        
-        
-        <message from='mychat@capulet.it' to='romeo@montague.it'>
-          <x xmlns='http://xabber.com/protocol/groupchat'>
-            <user>
-              <id>1lgfukgiyx3ged09</id>
-              <jid>juliet@capulet.it</jid>
-              <nickname>Juliet</nickname>
-              <metadata xmlns='urn:xmpp:avatar:metadata'>
-                <info
-                  bytes='12345'
-                  height='64'
-                  id='74c4ecf80b09aa4f7c58f5563db80f8251289898'
-                  type='image/png'
-                  width='64' />
-              </metadata>
-            </user>
-            <message>Go to the garden</message>
-          </x>
-          <body xml:lang='en'>Juliet:\nGo to the garden</body>
-        </message>
-        
-        
-        
-        <message from='4test2@xmppdev01.xabber.com' to='devmuler@jabber.ru' type='chat' id='d95f0fd1-c9a4-44a6-ac7d-2392c508e2cc'>
-        <x xmlns='http://xabber.com/protocol/groupchat'>
-        <id>rhbxg9rjitipwzdu</id>
-        <jid>maksim.batyatin@redsolution.com</jid>
-        <badge/>
-        <nickname>Batyatin Maksim</nickname>
-        <role>owner</role>
-        <metadata xmlns='urn:xmpp:avatar:metadata'>
-        <info width='64' height='64' type='image/jpeg' id='6b1798ba95a83d0c80221f18a1b00d95a2fc2f7a' bytes='16022'/>
-        </metadata>
-        <body xmlns='urn:ietf:params:xml:ns:xmpp-streams' xml:lang=''>HELLOUUUUUUU</body>
-        </x>
-        <markable xmlns='urn:xmpp:chat-markers:0'/>
-        <body xml:lang='en'>Batyatin Maksim: 
-        HELLOUUUUUUU</body>
-        </message>
-
-
-
-        cursor = avatardatabase.DB.cursor()
-        cursor.execute('''SELECT EXISTS(SELECT * from gcs where
-        jid = ? and
-        room = ? and
-        name = ? );''', (str(jid), str(room), str(name)))
-        #  пользователь существует в бд
-        if cursor.fetchone():
-            print("Found!\n"*50)
-
-        # TODO FIX list of xabber groupchats
-        else:
-            # пользователя соответственно нема, записиваем его в бд
-            cursor.execute("INSERT INTO gcs (jid, room, name, id, role, badge) "
-                           "values (?, ?, ?, ?, ?, ?)", (jid, room, name, id, role, badge))
-            print("Created!\n"*50)
-
-            # TODO save avatars: base64 -> img
-        """
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
@@ -304,6 +249,7 @@ class Base(object):
 
         # styles
         self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
+        # self.nickname_color.set_property("weight", Pango.Weight.BOLD)
         self.nickname_color.set_property("size_points", 10)
 
         self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
@@ -311,6 +257,7 @@ class Base(object):
 
         self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
         self.info_style.set_property("foreground", "grey")
+        self.info_style.set_property("style", Pango.Style.ITALIC)
         self.info_style.set_property("left-margin", 64)
 
         self.rolestyle = self.textview.tv.get_buffer().create_tag("role_text", size_points=10)
@@ -336,21 +283,21 @@ class Base(object):
 
             # nickname
             start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, nickname, len(nickname), True)
+            buffer_.insert_interactive(iter_, nickname, len(nickname.encode('utf-8')), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
             # role
             role = " "+role
             start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, role, len(role), True)
+            buffer_.insert_interactive(iter_, role, len(role.encode('utf-8')), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
             # badge
             badge = " "+badge
             start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, badge, len(badge), True)
+            buffer_.insert_interactive(iter_, badge, len(badge.encode('utf-8')), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.badgestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
@@ -358,14 +305,14 @@ class Base(object):
 
         # message
         start_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_interactive(iter_, message, len(message), True)
+        buffer_.insert_interactive(iter_, message, len(message.encode('utf-8')), True)
         end_iter = buffer_.create_mark(None, iter_, True)
         buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
     def print_server_info(self, iter_, buffer_, info_message):
         buffer_.insert_interactive(iter_, '\n', len('\n'), True)
         start_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_interactive(iter_, info_message, len(info_message), True)
+        buffer_.insert_interactive(iter_, info_message, len(info_message.encode('utf-8')), True)
         end_iter = buffer_.create_mark(None, iter_, True)
         buffer_.apply_tag(self.info_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
@@ -379,12 +326,16 @@ class Base(object):
         print(type(additional_data))
 
         if 'incomingtxt' in text_tags:
-            writer_jid = additional_data['jid']
-            nickname = additional_data['nickname']
-            message = additional_data['message']
-            avatar_id = additional_data['av_id']
-            role = additional_data['role']
-            badge = additional_data['badge']
+            if additional_data != {}:
+                writer_jid = additional_data['jid']
+                nickname = additional_data['nickname']
+                message = additional_data['message']
+                avatar_id = additional_data['av_id']
+                role = additional_data['role']
+                badge = additional_data['badge']
+            else:
+                writer_jid = 'room'
+                message = real_text
 
         if 'outgoingtxt' in text_tags:
             nickname = 'me'
@@ -416,11 +367,11 @@ class Base(object):
             iter_ = buffer_.get_end_iter()
 
         # delete old "[time] name: "
-        if nickname:
-            self.textview.plugin_modified = True
-            lineindex = buffer_.get_line_count() - 1
-            prevline = buffer_.get_iter_at_line(lineindex)
-            buffer_.delete(prevline, iter_)
+        # if nickname:
+        self.textview.plugin_modified = True
+        lineindex = buffer_.get_line_count() - 1
+        prevline = buffer_.get_iter_at_line(lineindex)
+        buffer_.delete(prevline, iter_)
 
 
         if IS_MSG:
@@ -445,7 +396,6 @@ class Base(object):
         except AttributeError:
             # Gajim 1.0.1
             self.textview.scroll_to_end()
-
 
     def on_button_press_event(self, eb, event, additional_data):
         isme = False
@@ -479,14 +429,12 @@ class Base(object):
                 dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
                     on_response_ok=on_ok, on_response_cancel=on_cancel)
                 dialog.popup()
-            print('left clicked\n'*10)
 
         # right klick
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             dialog = dialogs.NonModalConfirmationDialog('hello', sectext='right clicked, yep?',
                 on_response_ok=on_ok, on_response_cancel=on_cancel)
             dialog.popup()
-            print('right clicked\n'*10)
 
     # Change mouse pointer to HAND2 when
     # mouse enter the eventbox with the image
@@ -525,9 +473,8 @@ class Base(object):
                     image = Gtk.Image.new_from_pixbuf(pixbuf)
 
                 css = '''#Xavatar {
-                box-shadow: 0px 0px 3px 0px alpha(@theme_text_color, 0.2);
                 margin: 0px;
-                border-radius: 16;
+                border-radius: 50%;
                 border-style: solid;
                 border-width: 1;
                 }'''
