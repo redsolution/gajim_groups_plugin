@@ -16,15 +16,15 @@ from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
 import base64, os
+import tempfile
 
 allowjids = ['4test2@xmppdev01.xabber.com']
-avatardata = []
 
 # namespaces & logger
 log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
 XABBER_GC = 'http://xabber.com/protocol/groupchat'
 XABBER_GC_invite = 'http://xabber.com/protocol/groupchat#invite'
-
+AVATARS_DIR = tempfile.gettempdir()+'/xabavatars'
 
 class XabberGroupsPlugin(GajimPlugin):
 
@@ -64,21 +64,26 @@ class XabberGroupsPlugin(GajimPlugin):
     </presence>
     '''
 
-    @staticmethod
-    def base64_to_image(img_base64, filename):
+    def base64_to_image(self, img_base64, filename):
         # decode base, return realpath
+        dir = AVATARS_DIR
+        try:
+            os.stat(dir)
+        except:
+            os.mkdir(dir)
         imgdata = base64.b64decode(img_base64)
-        realfilename = os.path.abspath(filename + '.jpg')
-        filename = filename + '.jpg'
+        realfilename = os.path.abspath(dir+'/'+filename+'.jpg')
+        filename = dir+'/'+filename+'.jpg'
         with open(filename, 'wb') as f:
             f.write(imgdata)
-        return (realfilename)
+        return(realfilename)
+
 
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
         print('алярма, новй айкъю пришёль \n'*10)
         # check is iq from xabber gc
-        id = obj.getAttr('id')
+        id = obj.stanza.getAttr('id')
         items = obj.stanza.getTag('pubsub').getTag('items').getData()
         if items:
             base64avatar = items.getTag('data', namespace='urn:xmpp:avatar:data')
@@ -157,19 +162,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'role': role,
                                     'badge': badge
                                     })
-        return
-        # hotfix list with personal data
-        # remake db
-        ISEXIST = False
-        print(avatardata)
-        for avList in avatardata:
-            if (avList[0] == jid) and (avList[1] == room) and (avList[2] == name):
-                print("PERSON IS ALREADY EXIST")
-                ISEXIST = True
-        if not ISEXIST:
-            avatardata.append([jid, room, name, id, role, badge])
-            print("PERSON ADDED")
 
+        '''
             # send request for avatars
             accounts = app.contacts.get_accounts()
             myjid = obj.stanza.getAttr('to')
@@ -184,10 +178,7 @@ class XabberGroupsPlugin(GajimPlugin):
                     stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(id))
                     app.connections[account].connection.send(stanza_send, now=True)
                     return
-
-        print('AVARATDATA')
-        for avList in avatardata:
-            print(avList)
+        '''
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
@@ -277,9 +268,15 @@ class Base(object):
     def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
         if not SAME_FROM:
             # avatar
+            avatar = None
+            try:
+                avatar = open(AVATARS_DIR+'/'+additional_data['av_id']+'.jpg')
+                avatar = AVATARS_DIR+'/'+additional_data['av_id']+'.jpg'
+            except:
+                avatar = self.default_avatar
             avatar_placement = buffer_.create_mark(None, iter_, True)
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-            app.thread_interface(self._update_avatar, [self.default_avatar, avatar_placement, additional_data])
+            app.thread_interface(self._update_avatar, [avatar, avatar_placement, additional_data])
 
             # nickname
             start_iter = buffer_.create_mark(None, iter_, True)
@@ -474,7 +471,7 @@ class Base(object):
 
                 css = '''#Xavatar {
                 margin: 0px;
-                border-radius: 50%;
+                border-radius: 0%;
                 border-style: solid;
                 border-width: 1;
                 }'''
