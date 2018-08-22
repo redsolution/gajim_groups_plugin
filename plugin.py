@@ -18,13 +18,20 @@ from gajim.plugins.helpers import log_calls
 import base64, os
 import tempfile
 
-allowjids = ['4test2@xmppdev01.xabber.com']
+allowjids = ['4test2@xmppdev01.xabber.com', '4test3@xmppdev01.xabber.com']
 
 # namespaces & logger
 log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
 XABBER_GC = 'http://xabber.com/protocol/groupchat'
 XABBER_GC_invite = 'http://xabber.com/protocol/groupchat#invite'
-AVATARS_DIR = tempfile.gettempdir()+'/xabavatars'
+
+# dir = tempfile.gettempdir() + '/xabavatars'
+dir = os.environ['HOME'] + '/xabavatars'
+AVATARS_DIR = os.path.normpath(dir)
+try:
+    os.stat(AVATARS_DIR)
+except:
+    os.mkdir(AVATARS_DIR)
 
 class XabberGroupsPlugin(GajimPlugin):
 
@@ -76,19 +83,21 @@ class XabberGroupsPlugin(GajimPlugin):
         filename = dir+'/'+filename+'.jpg'
         with open(filename, 'wb') as f:
             f.write(imgdata)
+            f.close()
         return(realfilename)
 
 
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
-        print('алярма, новй айкъю пришёль \n'*10)
         # check is iq from xabber gc
-        id = obj.stanza.getAttr('id')
-        items = obj.stanza.getTag('pubsub').getTag('items').getData()
-        if items:
-            base64avatar = items.getTag('data', namespace='urn:xmpp:avatar:data')
+        try:
+            item = obj.stanza.getTag('pubsub').getTag('items').getTag('item')
+            base64avatar = item.getTag('data', namespace='urn:xmpp:avatar:data').getData()
+            id = item.getAttr('id')
             avatar_loc = self.base64_to_image(base64avatar, id)
             print(avatar_loc)
+        except:
+            return
 
 
     @log_calls('XabberGroupsPlugin')
@@ -144,6 +153,7 @@ class XabberGroupsPlugin(GajimPlugin):
             jid = None
         room = obj.jid
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+        userid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('id').getData()
         if not name:
             name = False
         message = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('body').getData()
@@ -158,27 +168,41 @@ class XabberGroupsPlugin(GajimPlugin):
         obj.additional_data.update({'jid': jid,
                                     'nickname': name,
                                     'message': message,
+                                    'id': id,
                                     'av_id': id,
                                     'role': role,
                                     'badge': badge
                                     })
 
-        '''
-            # send request for avatars
-            accounts = app.contacts.get_accounts()
-            myjid = obj.stanza.getAttr('to')
-            for account in accounts:
-                realjid = app.get_jid_from_account(account)
-                realjid = app.get_jid_without_resource(str(realjid))
-                if myjid == realjid:
-                    stanza_send = nbxmpp.Iq(to=room, typ='get', frm=realjid)
-                    stanza_send.setAttr('id', str(id))
-                    stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
-                    stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+jid))
-                    stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(id))
-                    app.connections[account].connection.send(stanza_send, now=True)
-                    return
-        '''
+
+        account = None
+        accounts = app.contacts.get_accounts()
+        myjid = obj.stanza.getAttr('to')
+        for acc in accounts:
+            realjid = app.get_jid_from_account(acc)
+            realjid = app.get_jid_without_resource(str(realjid))
+            if myjid == realjid:
+                account = acc
+
+        IsAvatarExist = False
+        try:
+            k = open(AVATARS_DIR + '/' + id + '.jpg')
+            IsAvatarExist = True
+        except:
+            IsAvatarExist = False
+        IsAvatarExist = False
+        if id != 'unknown' and account and not IsAvatarExist:
+            self.send_call_single_avatar(account, room, userid, id)
+
+    @log_calls('XabberGroupsPlugin')
+    def send_call_single_avatar(self, account, room_jid, u_id, av_id):
+        stanza_send = nbxmpp.Iq(to=room_jid, typ='get')
+        stanza_send.setAttr('id', str(av_id))
+        stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
+        stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+str(u_id)))
+        stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(av_id))
+        app.connections[account].connection.send(stanza_send, now=True)
+
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
@@ -328,6 +352,7 @@ class Base(object):
                 nickname = additional_data['nickname']
                 message = additional_data['message']
                 avatar_id = additional_data['av_id']
+                user_id = additional_data['id']
                 role = additional_data['role']
                 badge = additional_data['badge']
             else:
@@ -352,10 +377,10 @@ class Base(object):
             else:
                 self.previous_message_from = 'me'
         if 'incomingtxt' in text_tags:
-            if self.previous_message_from == writer_jid:
+            if self.previous_message_from == user_id:
                 SAME_FROM = True
             else:
-                self.previous_message_from = writer_jid
+                self.previous_message_from = user_id
 
 
 
@@ -396,8 +421,7 @@ class Base(object):
 
     def on_button_press_event(self, eb, event, additional_data):
         isme = False
-        try:
-            h = additional_data['nickname']
+        try: h = additional_data['nickname']
         except: isme = True
 
         def on_ok():
@@ -451,7 +475,7 @@ class Base(object):
         event_box.connect('leave-notify-event', self.on_leave_event)
         event_box.connect('button-press-event', self.on_button_press_event, additional_data)
 
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, True)
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, False)
         # pixbuf = base64.b64decode(pixbuf)
         # pixbuf = GdkPixbuf.Pixbuf.from_data(pixbuf)
 
@@ -469,12 +493,13 @@ class Base(object):
                 else:
                     image = Gtk.Image.new_from_pixbuf(pixbuf)
 
+
                 css = '''#Xavatar {
                 margin: 0px;
                 border-radius: 0%;
-                border-style: solid;
-                border-width: 1;
                 }'''
+                # border-style: solid;
+                # border-width: 1;
                 gtkgui_helpers.add_css_to_widget(image, css)
                 image.set_name('Xavatar')
 
