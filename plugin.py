@@ -16,15 +16,13 @@ from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
 import base64, os
-import tempfile
-
-allowjids = ['4test2@xmppdev01.xabber.com', '4test3@xmppdev01.xabber.com']
 
 # namespaces & logger
 log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
 XABBER_GC = 'http://xabber.com/protocol/groupchat'
 XABBER_GC_invite = 'http://xabber.com/protocol/groupchat#invite'
 
+# import tempfile
 # dir = tempfile.gettempdir() + '/xabavatars'
 dir = os.environ['HOME'] + '/xabavatars'
 AVATARS_DIR = os.path.normpath(dir)
@@ -32,6 +30,25 @@ try:
     os.stat(AVATARS_DIR)
 except:
     os.mkdir(AVATARS_DIR)
+
+allowjids = []
+def loadallowjid():
+    try:
+        with open(os.path.normpath(AVATARS_DIR + '/jids.txt')) as allowlist:
+            array = [row.strip() for row in allowlist]
+        return array
+    except:
+        return []
+def addallowjid(jid):
+    try:
+        allowlist = open(os.path.normpath(AVATARS_DIR + '/jids.txt'), 'a')
+        allowlist.write(jid + '\n')
+        allowlist.close()
+        global  allowjids
+        allowjids = loadallowjid()
+        return True
+    except: return False
+allowjids = loadallowjid()
 
 class XabberGroupsPlugin(GajimPlugin):
 
@@ -54,22 +71,6 @@ class XabberGroupsPlugin(GajimPlugin):
                                        self.disconnect_from_chat_control),
             'print_real_text': (self.print_real_text, None),
         }
-
-    '''
-    <presence from='4test2@xmppdev01.xabber.com' to='devmuler@jabber.ru/gajim.9F53IQTV'>
-    <x xmlns='http://xabber.com/protocol/groupchat'>
-    <jid>4test2@xmppdev01.xabber.com</jid>
-    <name>4test2</name>
-    <anonymous>false</anonymous>
-    <searchable>false</searchable>
-    <model>member-only</model>
-    <description>The best group chat</description>
-    <message>1534742075899437</message>
-    <contacts/>
-    <domains/>
-    </x>
-    </presence>
-    '''
 
     def base64_to_image(self, img_base64, filename):
         # decode base, return realpath
@@ -121,8 +122,8 @@ class XabberGroupsPlugin(GajimPlugin):
             jid = obj.stanza.getTag('invite', namespace=XABBER_GC).getTag('jid').getData()
 
         def on_ok():
+            addallowjid(jid)
             accounts = app.contacts.get_accounts()
-
             for account in accounts:
                 realjid = app.get_jid_from_account(account)
                 realjid = app.get_jid_without_resource(str(realjid))
@@ -152,6 +153,7 @@ class XabberGroupsPlugin(GajimPlugin):
         if not jid:
             jid = None
         room = obj.jid
+        addallowjid(room)
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
         userid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('id').getData()
         if not name:
@@ -184,24 +186,24 @@ class XabberGroupsPlugin(GajimPlugin):
             if myjid == realjid:
                 account = acc
 
-        IsAvatarExist = False
-        try:
-            k = open(AVATARS_DIR + '/' + id + '.jpg')
-            IsAvatarExist = True
-        except:
-            IsAvatarExist = False
-        IsAvatarExist = False
-        if id != 'unknown' and account and not IsAvatarExist:
+
+        if id != 'unknown' and account:
             self.send_call_single_avatar(account, room, userid, id)
 
     @log_calls('XabberGroupsPlugin')
     def send_call_single_avatar(self, account, room_jid, u_id, av_id):
-        stanza_send = nbxmpp.Iq(to=room_jid, typ='get')
-        stanza_send.setAttr('id', str(av_id))
-        stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
-        stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+str(u_id)))
-        stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(av_id))
-        app.connections[account].connection.send(stanza_send, now=True)
+
+        try:
+            # error if avatar is not exist
+            dir = AVATARS_DIR + '/' + id + '.jpg'
+            k = open(os.path.normpath(dir))
+        except:
+            stanza_send = nbxmpp.Iq(to=room_jid, typ='get')
+            stanza_send.setAttr('id', str(av_id))
+            stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
+            stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+str(u_id)))
+            stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(av_id))
+            app.connections[account].connection.send(stanza_send, now=True)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -294,8 +296,9 @@ class Base(object):
             # avatar
             avatar = None
             try:
-                avatar = open(AVATARS_DIR+'/'+additional_data['av_id']+'.jpg')
-                avatar = AVATARS_DIR+'/'+additional_data['av_id']+'.jpg'
+                path = os.path.normpath(AVATARS_DIR+'/'+additional_data['av_id']+'.jpg')
+                avatar = open(path)
+                avatar = os.path.normpath(path)
             except:
                 avatar = self.default_avatar
             avatar_placement = buffer_.create_mark(None, iter_, True)
@@ -341,10 +344,8 @@ class Base(object):
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         nickname = None
-
-        print("additional data ok da")
+        user_id = None
         print(additional_data)
-        print(type(additional_data))
 
         if 'incomingtxt' in text_tags:
             if additional_data != {}:
@@ -419,7 +420,7 @@ class Base(object):
             # Gajim 1.0.1
             self.textview.scroll_to_end()
 
-    def on_button_press_event(self, eb, event, additional_data):
+    def on_avatar_press_event(self, eb, event, additional_data):
         isme = False
         try: h = additional_data['nickname']
         except: isme = True
@@ -453,9 +454,10 @@ class Base(object):
 
         # right klick
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
-            dialog = dialogs.NonModalConfirmationDialog('hello', sectext='right clicked, yep?',
-                on_response_ok=on_ok, on_response_cancel=on_cancel)
-            dialog.popup()
+            self.on_avatar_right_click(event, additional_data)
+
+    def on_avatar_right_click(self, event, additional_data):
+        return 
 
     # Change mouse pointer to HAND2 when
     # mouse enter the eventbox with the image
@@ -473,7 +475,7 @@ class Base(object):
         event_box = Gtk.EventBox()
         event_box.connect('enter-notify-event', self.on_enter_event)
         event_box.connect('leave-notify-event', self.on_leave_event)
-        event_box.connect('button-press-event', self.on_button_press_event, additional_data)
+        event_box.connect('button-press-event', self.on_avatar_press_event, additional_data)
 
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, False)
         # pixbuf = base64.b64decode(pixbuf)
