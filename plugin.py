@@ -32,6 +32,7 @@ except:
     os.mkdir(AVATARS_DIR)
 
 allowjids = []
+
 def loadallowjid():
     try:
         with open(os.path.normpath(AVATARS_DIR + '/jids.txt')) as allowlist:
@@ -39,15 +40,18 @@ def loadallowjid():
         return array
     except:
         return []
+
 def addallowjid(jid):
-    try:
-        allowlist = open(os.path.normpath(AVATARS_DIR + '/jids.txt'), 'a')
-        allowlist.write(jid + '\n')
-        allowlist.close()
-        global  allowjids
-        allowjids = loadallowjid()
-        return True
-    except: return False
+    global allowjids
+    if jid in allowjids:
+        return False
+    allowjids.append(jid)
+    allowlist = open(os.path.normpath(AVATARS_DIR + '/jids.txt'), 'a')
+    allowlist.write(jid + '\n')
+    allowlist.close()
+    allowjids = loadallowjid()
+    return True
+
 allowjids = loadallowjid()
 
 class XabberGroupsPlugin(GajimPlugin):
@@ -149,9 +153,6 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
-        jid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
-        if not jid:
-            jid = None
         room = obj.jid
         addallowjid(room)
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
@@ -159,18 +160,22 @@ class XabberGroupsPlugin(GajimPlugin):
         if not name:
             name = False
         message = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('body').getData()
-        id = ''
+        id = None
         try:
             id = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
             id = id.getTag('info').getAttr('id')
         except: id = 'unknown'
+        jid = None
+        try:
+            jid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
+        except: jid = 'unknown'
         role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
         badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
 
         obj.additional_data.update({'jid': jid,
                                     'nickname': name,
                                     'message': message,
-                                    'id': id,
+                                    'id': userid,
                                     'av_id': id,
                                     'role': role,
                                     'badge': badge
@@ -443,10 +448,12 @@ class Base(object):
                             'name: %(name)s \n'
                             'role: %(role)s \n'
                             'jid: %(jid)s \n'
+                            'id: %(id)s \n'
                             'avatar id: %(av_id)s \n'
                             'two buttons exist:') % {'name': additional_data['nickname'],
                                                      'role': additional_data['role'],
                                                      'jid': additional_data['jid'],
+                                                     'id': additional_data['id'],
                                                      'av_id': additional_data['av_id']}
                 dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
                     on_response_ok=on_ok, on_response_cancel=on_cancel)
@@ -457,7 +464,7 @@ class Base(object):
             self.on_avatar_right_click(event, additional_data)
 
     def on_avatar_right_click(self, event, additional_data):
-        return 
+        return
 
     # Change mouse pointer to HAND2 when
     # mouse enter the eventbox with the image
