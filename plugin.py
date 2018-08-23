@@ -65,17 +65,39 @@ class XabberGroupsPlugin(GajimPlugin):
         self.history_window_control = None
 
         self.events_handlers = {
-            'decrypted-message-received': (ged.PREGUI1,
-                                           self._nec_decrypted_message_received),
-            'raw-iq-received': (ged.CORE,
-                                            self._nec_iq_received)
+            'decrypted-message-received': (ged.PREGUI1, self._nec_decrypted_message_received),
+            'raw-iq-received': (ged.CORE, self._nec_iq_received),
         }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
                                        self.disconnect_from_chat_control),
             'print_real_text': (self.print_real_text, None),
+            'roster_draw_contact': (self.connect_with_roster_draw_contact, None),
         }
 
+    @staticmethod
+    def is_groupchat(contact):
+        if hasattr(contact, 'is_groupchat'):
+            return contact.is_groupchat()
+        return False
+
+    @log_calls('XabberGroupsPlugin')
+    def connect_with_roster_draw_contact(self, roster, jid, account, contact):
+        renderer_num = 11 + roster.nb_ext_renderers
+        if self.is_groupchat(contact):
+            return
+        child_iters = roster._get_contact_iter(jid, account, contact, roster.model)
+        if not child_iters:
+            return
+        for iter_ in child_iters:
+            if roster.model[iter_][renderer_num] is None and contact.jid in allowjids:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(os.path.normpath(AVATARS_DIR+'/t.png'), 16, 16)
+                roster.model[iter_][renderer_num] = pixbuf
+
+
+# ==================================================================================================== #
+
+    @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
         # decode base, return realpath
         dir = AVATARS_DIR
@@ -91,11 +113,14 @@ class XabberGroupsPlugin(GajimPlugin):
             f.close()
         return(realfilename)
 
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_for_rights(self, account, jid):
+        return 'u have no rights, mazafaka'
 
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
-        # check is iq from xabber gc
         try:
+            # check is iq from xabber gc
             item = obj.stanza.getTag('pubsub').getTag('items').getTag('item')
             base64avatar = item.getTag('data', namespace='urn:xmpp:avatar:data').getData()
             id = item.getAttr('id')
@@ -200,7 +225,7 @@ class XabberGroupsPlugin(GajimPlugin):
 
         try:
             # error if avatar is not exist
-            dir = AVATARS_DIR + '/' + id + '.jpg'
+            dir = AVATARS_DIR + '/' + av_id + '.jpg'
             k = open(os.path.normpath(dir))
         except:
             stanza_send = nbxmpp.Iq(to=room_jid, typ='get')
@@ -215,6 +240,8 @@ class XabberGroupsPlugin(GajimPlugin):
     def connect_with_chat_control(self, chat_control):
         account = chat_control.contact.account.name
         jid = chat_control.contact.jid
+        if jid in allowjids:  # ask for rights if xgc if open chat control
+            self.send_ask_for_rights(chat_control.contact, jid)
         if account not in self.controls and jid in allowjids:
             self.controls[account] = {}
         self.controls[account][jid] = Base(self, chat_control.conv_textview)
@@ -316,19 +343,19 @@ class Base(object):
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
-            # role
-            role = " "+role
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, role, len(role.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
             # badge
             badge = " "+badge
             start_iter = buffer_.create_mark(None, iter_, True)
             buffer_.insert_interactive(iter_, badge, len(badge.encode('utf-8')), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.badgestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # role
+            role = " "+role
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, role, len(role.encode('utf-8')), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
             buffer_.insert_interactive(iter_, '\n', len('\n'), True)
 
@@ -402,8 +429,72 @@ class Base(object):
         buffer_.delete(prevline, iter_)
 
 
+
+
+
+
+
+
+
+
+
+
         if IS_MSG:
-            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
+            path = ''
+            try:
+                path = os.path.normpath(AVATARS_DIR + '/' + avatar_id + '.jpg')
+            except: path = self.default_avatar
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 32, 32, False)
+            avatar_img = Gtk.Image.new_from_pixbuf(pixbuf)
+            avatar = Gtk.Grid()
+            avatar.add(avatar_img)
+
+            b1 = Gtk.Label(nickname)
+            b2 = Gtk.Label(badge)
+            b3 = Gtk.Label(role)
+            b1.modify_font(Pango.FontDescription('monospace'))
+            info = Gtk.Box(spacing=6)
+            info.pack_start(b1, False, False, 0)
+            info.pack_start(b2, False, False, 0)
+            info.pack_start(b3, False, False, 0)
+
+            bb1 = Gtk.Label(message)
+            message_box = Gtk.Box(spacing=6)
+            message_box.pack_start(bb1, True, True, 0)
+            messagebox = Gtk.Grid()
+            messagebox.add(message_box)
+
+            # info_n_message = Gtk.Box(Gtk.Orientation.VERTICAL, 6)
+            # info_n_message.pack_start(info, False, False, 0)
+            # info_n_message.pack_start(messagebox, False, False, 0)
+            info_n_message = Gtk.Grid()
+            info_n_message.add(info)
+            info_n_message.attach(messagebox, 0, 1, 1, 1)
+
+            full_message_box = Gtk.Box(spacing=6)
+            full_message_box.pack_start(avatar, True, True, 0)
+            full_message_box.pack_start(info_n_message, True, True, 0)
+
+            event_box = Gtk.EventBox()
+            event_box.connect('enter-notify-event', self.on_enter_event)
+            event_box.connect('leave-notify-event', self.on_leave_event)
+            event_box.connect('button-press-event', self.on_avatar_press_event, additional_data)
+            event_box.add(full_message_box)
+
+            anchor = buffer_.create_child_anchor(iter_)
+            self.textview.tv.add_child_at_anchor(event_box, anchor)
+
+
+            # TODO make def "make_message_from_data", which returns event_box with every needed conf
+            # this will make easier replying of messages
+
+
+
+
+
+            #if IS_MSG:
+            #pass
+            # self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
         else:
             self.print_server_info(iter_, buffer_, real_text)
 
@@ -436,8 +527,8 @@ class Base(object):
         def on_cancel():
             return
 
-        # left click
-        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
+        # right click
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             if isme:
                 dialog = dialogs.NonModalConfirmationDialog('hello', sectext='it is your avatar',
                     on_response_ok=on_ok, on_response_cancel=on_cancel)
@@ -459,8 +550,8 @@ class Base(object):
                     on_response_ok=on_ok, on_response_cancel=on_cancel)
                 dialog.popup()
 
-        # right klick
-        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+        # left klick
+        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
             self.on_avatar_right_click(event, additional_data)
 
     def on_avatar_right_click(self, event, additional_data):
@@ -501,7 +592,6 @@ class Base(object):
                     image = Gtk.Image.new_from_animation(pixbuf)
                 else:
                     image = Gtk.Image.new_from_pixbuf(pixbuf)
-
 
                 css = '''#Xavatar {
                 margin: 0px;
