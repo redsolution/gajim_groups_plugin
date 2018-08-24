@@ -197,16 +197,51 @@ class XabberGroupsPlugin(GajimPlugin):
         role = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
         badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
 
+
+        # TODO check for forwarding
+        forwarded = obj.stanza.getTag('forwarded', namespace='urn:xmpp:forward:0')
+        forward_m = None
+        if forwarded:
+            print('forwarded'*10)
+            delay = forwarded.getTag('delay', namespace='urn:xmpp:delay').getAttr('stamp')
+            fobj = forwarded.getTag('message')
+            fname = fobj.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+            fuserid = fobj.getTag('x', namespace=XABBER_GC).getTag('id').getData()
+            if not fname:
+                fname = False
+            fmessage = fobj.getTag('x', namespace=XABBER_GC).getTag('body').getData()
+            fid = None
+            try:
+                fid = fobj.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
+                fid = fobj.getTag('info').getAttr('id')
+            except:
+                fid = 'unknown'
+            fjid = None
+            try:
+                fjid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
+            except:
+                fjid = 'unknown'
+            frole = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
+            fbadge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
+
+            forward_m = {'jid': fjid,
+                        'nickname': fname,
+                        'message': fmessage,
+                        'id': fuserid,
+                        'av_id': fid,
+                        'role': frole,
+                        'badge': fbadge
+            }
+
         obj.additional_data.update({'jid': jid,
                                     'nickname': name,
                                     'message': message,
                                     'id': userid,
                                     'av_id': id,
                                     'role': role,
-                                    'badge': badge
+                                    'badge': badge,
+                                    'forward': forward_m
                                     })
-
-
         account = None
         accounts = app.contacts.get_accounts()
         myjid = obj.stanza.getAttr('to')
@@ -215,8 +250,6 @@ class XabberGroupsPlugin(GajimPlugin):
             realjid = app.get_jid_without_resource(str(realjid))
             if myjid == realjid:
                 account = acc
-
-
         if id != 'unknown' and account:
             self.send_call_single_avatar(account, room, userid, id)
 
@@ -302,9 +335,10 @@ class Base(object):
         self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
         # self.nickname_color.set_property("weight", Pango.Weight.BOLD)
         self.nickname_color.set_property("size_points", 10)
+        self.nickname_color.set_property("left-margin", 4)
 
         self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
-        self.text_style.set_property("left-margin", 32)
+        # self.text_style.set_property("left-margin", 38)
 
         self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
         self.info_style.set_property("foreground", "grey")
@@ -319,7 +353,7 @@ class Base(object):
 
         self.pointer_cursor = self.textview.tv.get_buffer().create_tag("pointer_cursor")
 
-        # =======================================work with messages========================================= #
+        # ==================================ui work with messages interaction========================== #
         self.change_cursor = False
         self.connect_signals()
 
@@ -374,8 +408,8 @@ class Base(object):
                         tag.set_property("background", "#FFFFFF")
                         message_data[2] = False
 
-
     # ================================================================================ #
+
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
         # to prevent circular references among objects
@@ -383,6 +417,9 @@ class Base(object):
             if self.handlers[i].handler_is_connected(i):
                 self.handlers[i].disconnect(i)
             del self.handlers[i]
+
+    def print_forward(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
+        return
 
     def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
         if not SAME_FROM:
@@ -448,11 +485,12 @@ class Base(object):
         end_iter = buffer_.create_mark(None, iter_, True)
         buffer_.apply_tag(self.info_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
-
+    # poligony poligon tra ta ta ta tah kaboom
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         nickname = None
         user_id = None
+        forward = None
         print(additional_data)
 
         if 'incomingtxt' in text_tags:
@@ -464,9 +502,16 @@ class Base(object):
                 user_id = additional_data['id']
                 role = additional_data['role']
                 badge = additional_data['badge']
+                try:
+                    forward = additional_data['forward']
+                except:
+                    forward = None
             else:
                 writer_jid = 'room'
                 message = real_text
+
+        if forward:
+            print(str(forward))
 
         if 'outgoingtxt' in text_tags:
             nickname = 'me'
@@ -505,7 +550,10 @@ class Base(object):
         buffer_.delete(prevline, iter_)
 
         if IS_MSG:
-            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
+            if forward:
+                self.print_forward(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
+            else:
+                self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
         else:
             self.print_server_info(iter_, buffer_, real_text)
 
