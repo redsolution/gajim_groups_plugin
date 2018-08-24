@@ -290,11 +290,13 @@ class Base(object):
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        self.default_avatar = os.path.join(BASE_DIR, "default.jpg")
+        self.default_avatar = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.jpg")
         # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
 
         self.previous_message_from = None
+
+        self.message_id = -1
+        self.message_tags_props = []
 
         # styles
         self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
@@ -315,6 +317,65 @@ class Base(object):
         self.badgestyle = self.textview.tv.get_buffer().create_tag("badge_text", size_points=8)
         self.badgestyle.set_property("foreground", "grey")
 
+        self.pointer_cursor = self.textview.tv.get_buffer().create_tag("pointer_cursor")
+
+        # =======================================work with messages========================================= #
+        self.change_cursor = False
+        self.connect_signals()
+
+    def connect_signals(self):
+        tag_table = self.textview.tv.get_buffer().get_tag_table()
+        tag = tag_table.lookup("message_text")
+        if tag:
+            self.textview.tv.connect('motion_notify_event', self.on_textview_motion_notify_event)
+
+    def on_textview_motion_notify_event(self, widget, event):
+        # change cursor on the nicks
+        pointer_x, pointer_y = self.textview.tv.get_window(
+            Gtk.TextWindowType.TEXT).get_pointer()[1:3]
+        x, y = self.textview.tv.window_to_buffer_coords(Gtk.TextWindowType.TEXT,
+            pointer_x, pointer_y)
+        tags = self.textview.tv.get_iter_at_location(x, y)[1].get_tags()
+
+        if self.change_cursor:
+            self.textview.tv.get_window(Gtk.TextWindowType.TEXT).set_cursor(
+                Gdk.Cursor.new(Gdk.CursorType.XTERM))
+            self.change_cursor = False
+        for tag in tags:
+            tag_table = self.textview.tv.get_buffer().get_tag_table()
+            if tag == tag_table.lookup("pointer_cursor"):
+                self.textview.tv.get_window(Gtk.TextWindowType.TEXT).set_cursor(
+                    Gdk.Cursor.new(Gdk.CursorType.HAND2))
+            self.change_cursor = True
+
+    def interact_with_txt(self, texttag, widget, event, iter_, tagname, additional_data):
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button.button == 1:
+            # left mouse button clicked
+            begin_iter = iter_.copy()
+            # we get the begining of the tag
+            while not begin_iter.begins_tag(texttag):
+                begin_iter.backward_char()
+            end_iter = iter_.copy()
+            # we get the end of the tag
+            while not end_iter.ends_tag(texttag):
+                end_iter.forward_char()
+            buffer_ = self.textview.tv.get_buffer()
+            word = buffer_.get_text(begin_iter, end_iter, True)
+            for message_data in self.message_tags_props:
+                if message_data[0] == tagname:
+                    tag_table = self.textview.tv.get_buffer().get_tag_table()
+                    tag = tag_table.lookup(tagname)
+                    if message_data[2] == False:
+                        tag.set_property("background", "#FFAAAA")
+                        message_data[2] = True
+                        print(tagname)
+                        print(additional_data)
+                    else:
+                        tag.set_property("background", "#FFFFFF")
+                        message_data[2] = False
+
+
+    # ================================================================================ #
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
         # to prevent circular references among objects
@@ -337,6 +398,8 @@ class Base(object):
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
             app.thread_interface(self._update_avatar, [avatar, avatar_placement, additional_data])
 
+        all_message_start_iter = buffer_.create_mark(None, iter_, True)
+        if not SAME_FROM:
             # nickname
             start_iter = buffer_.create_mark(None, iter_, True)
             buffer_.insert_interactive(iter_, nickname, len(nickname.encode('utf-8')), True)
@@ -359,16 +422,29 @@ class Base(object):
 
             buffer_.insert_interactive(iter_, '\n', len('\n'), True)
 
+        # mark message with id
+        self.message_id += 1
+        tagname = "message_text_"+str(self.message_id)
+        text_functional = self.textview.tv.get_buffer().create_tag(tagname)
+        # def for text click
+        text_functional.connect('event', self.interact_with_txt, tagname, additional_data)
+        self.message_tags_props.append([tagname, additional_data, False])
+
         # message
         start_iter = buffer_.create_mark(None, iter_, True)
         buffer_.insert_interactive(iter_, message, len(message.encode('utf-8')), True)
         end_iter = buffer_.create_mark(None, iter_, True)
+        # functional
+        buffer_.apply_tag(text_functional, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
+        # visual
         buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+        # pointer
+        buffer_.apply_tag(self.pointer_cursor, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
 
     def print_server_info(self, iter_, buffer_, info_message):
-        buffer_.insert_interactive(iter_, '\n', len('\n'), True)
         start_iter = buffer_.create_mark(None, iter_, True)
         buffer_.insert_interactive(iter_, info_message, len(info_message.encode('utf-8')), True)
+        buffer_.insert_interactive(iter_, '\n', len('\n'), True)
         end_iter = buffer_.create_mark(None, iter_, True)
         buffer_.apply_tag(self.info_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
@@ -428,77 +504,15 @@ class Base(object):
         prevline = buffer_.get_iter_at_line(lineindex)
         buffer_.delete(prevline, iter_)
 
-
-
-
-
-
-
-
-
-
-
-
         if IS_MSG:
-            path = ''
-            try:
-                path = os.path.normpath(AVATARS_DIR + '/' + avatar_id + '.jpg')
-            except: path = self.default_avatar
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 32, 32, False)
-            avatar_img = Gtk.Image.new_from_pixbuf(pixbuf)
-            avatar = Gtk.Grid()
-            avatar.add(avatar_img)
-
-            b1 = Gtk.Label(nickname)
-            b2 = Gtk.Label(badge)
-            b3 = Gtk.Label(role)
-            b1.modify_font(Pango.FontDescription('monospace'))
-            info = Gtk.Box(spacing=6)
-            info.pack_start(b1, False, False, 0)
-            info.pack_start(b2, False, False, 0)
-            info.pack_start(b3, False, False, 0)
-
-            bb1 = Gtk.Label(message)
-            message_box = Gtk.Box(spacing=6)
-            message_box.pack_start(bb1, True, True, 0)
-            messagebox = Gtk.Grid()
-            messagebox.add(message_box)
-
-            # info_n_message = Gtk.Box(Gtk.Orientation.VERTICAL, 6)
-            # info_n_message.pack_start(info, False, False, 0)
-            # info_n_message.pack_start(messagebox, False, False, 0)
-            info_n_message = Gtk.Grid()
-            info_n_message.add(info)
-            info_n_message.attach(messagebox, 0, 1, 1, 1)
-
-            full_message_box = Gtk.Box(spacing=6)
-            full_message_box.pack_start(avatar, True, True, 0)
-            full_message_box.pack_start(info_n_message, True, True, 0)
-
-            event_box = Gtk.EventBox()
-            event_box.connect('enter-notify-event', self.on_enter_event)
-            event_box.connect('leave-notify-event', self.on_leave_event)
-            event_box.connect('button-press-event', self.on_avatar_press_event, additional_data)
-            event_box.add(full_message_box)
-
-            anchor = buffer_.create_child_anchor(iter_)
-            self.textview.tv.add_child_at_anchor(event_box, anchor)
-
-
-            # TODO make def "make_message_from_data", which returns event_box with every needed conf
-            # this will make easier replying of messages
-
-
-
-
-
-            #if IS_MSG:
-            #pass
-            # self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
+            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
         else:
             self.print_server_info(iter_, buffer_, real_text)
 
         # TODO fix cyrillic
+
+
+
 
     def _get_at_end(self):
         try:
