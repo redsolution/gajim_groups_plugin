@@ -355,15 +355,16 @@ class Base(object):
         self.nickname_color.set_property("left-margin", 4)
 
         self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=10)
-        # self.text_style.set_property("left-margin", 38)
+        self.text_style.set_property("left-margin", 36)
 
         self.text_forward_style = self.textview.tv.get_buffer().create_tag()
-        self.text_forward_style.set_property("left-margin", 32)
+        # self.text_forward_style.set_property("left-margin", 32)
+        self.text_forward_style.set_property("left-margin", 66)
 
         self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
         self.info_style.set_property("foreground", "grey")
         self.info_style.set_property("style", Pango.Style.ITALIC)
-        self.info_style.set_property("left-margin", 64)
+        self.info_style.set_property("left-margin", 62)
 
         self.rolestyle = self.textview.tv.get_buffer().create_tag("role_text", size_points=10)
         self.rolestyle.set_property("foreground", "black")
@@ -420,12 +421,12 @@ class Base(object):
                     tag_table = self.textview.tv.get_buffer().get_tag_table()
                     tag = tag_table.lookup(tagname)
                     if message_data[2] == False:
-                        tag.set_property("background", "#FFAAAA")
+                        tag.set_property("paragraph-background", "#FFAAAA")
                         message_data[2] = True
                         print(tagname)
                         print(additional_data)
                     else:
-                        tag.set_property("background", "#FFFFFF")
+                        tag.set_property("paragraph-background", "#FFFFFF")
                         message_data[2] = False
 
     # ================================================================================ #
@@ -449,7 +450,7 @@ class Base(object):
                 IS_FORWARD = True
         except: forward = None
 
-
+        all_message_start_iter = buffer_.create_mark(None, iter_, True)
         if not SAME_FROM:
             # avatar
             avatar = None
@@ -463,7 +464,6 @@ class Base(object):
             # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
             app.thread_interface(self._update_avatar, [avatar, avatar_placement, additional_data])
 
-        all_message_start_iter = buffer_.create_mark(None, iter_, True)
         if not SAME_FROM:
             # nickname
             start_iter = buffer_.create_mark(None, iter_, True)
