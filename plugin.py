@@ -202,27 +202,44 @@ class XabberGroupsPlugin(GajimPlugin):
         forwarded = obj.stanza.getTag('forwarded', namespace='urn:xmpp:forward:0')
         forward_m = None
         if forwarded:
-            print('forwarded'*10)
+            print('forwarded\n'*10)
             delay = forwarded.getTag('delay', namespace='urn:xmpp:delay').getAttr('stamp')
             fobj = forwarded.getTag('message')
-            fname = fobj.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
-            fuserid = fobj.getTag('x', namespace=XABBER_GC).getTag('id').getData()
-            if not fname:
-                fname = False
-            fmessage = fobj.getTag('x', namespace=XABBER_GC).getTag('body').getData()
-            fid = None
-            try:
-                fid = fobj.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
-                fid = fobj.getTag('info').getAttr('id')
+
+            fname = ''
+            try: fname = fobj.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+            except: fname = name
+
+            fuserid = ''
+            try: fuserid = fobj.getTag('x', namespace=XABBER_GC).getTag('id').getData()
             except:
+                fuserid = userid
+
+            fmessage = ''
+            try: fmessage = fobj.getTag('x', namespace=XABBER_GC).getTag('body').getData()
+            except: fmessage = fobj.getTag('body').getData()
+
+
+            fid = None
+            if name == fname:
+                fid = id
+            else:
                 fid = 'unknown'
+
             fjid = None
             try:
-                fjid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
+                fjid = fobj.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
             except:
-                fjid = 'unknown'
-            frole = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('role').getData()
-            fbadge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
+                if fname == name:
+                    fjid = jid
+                else:
+                    fjid = 'unknown'
+            try:
+                frole = fobj.getTag('x', namespace=XABBER_GC).getTag('role').getData()
+                fbadge = fobj.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
+            except:
+                frole = role
+                fbadge = badge
 
             forward_m = {'jid': fjid,
                         'nickname': fname,
@@ -337,8 +354,11 @@ class Base(object):
         self.nickname_color.set_property("size_points", 10)
         self.nickname_color.set_property("left-margin", 4)
 
-        self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=8)
+        self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=10)
         # self.text_style.set_property("left-margin", 38)
+
+        self.text_forward_style = self.textview.tv.get_buffer().create_tag()
+        self.text_forward_style.set_property("left-margin", 32)
 
         self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
         self.info_style.set_property("foreground", "grey")
@@ -418,10 +438,18 @@ class Base(object):
                 self.handlers[i].disconnect(i)
             del self.handlers[i]
 
-    def print_forward(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
-        return
 
     def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
+
+        IS_FORWARD = False
+        forward = None
+        try:
+            forward = additional_data['forward']
+            if forward != None:
+                IS_FORWARD = True
+        except: forward = None
+
+
         if not SAME_FROM:
             # avatar
             avatar = None
@@ -457,8 +485,6 @@ class Base(object):
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
-            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-
         # mark message with id
         self.message_id += 1
         tagname = "message_text_"+str(self.message_id)
@@ -467,10 +493,65 @@ class Base(object):
         text_functional.connect('event', self.interact_with_txt, tagname, additional_data)
         self.message_tags_props.append([tagname, additional_data, False])
 
-        # message
-        start_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_interactive(iter_, message, len(message.encode('utf-8')), True)
-        end_iter = buffer_.create_mark(None, iter_, True)
+
+        if IS_FORWARD:
+
+            forwarddict = additional_data['forward']
+            print(additional_data['forward'])
+            print(forwarddict)
+            fnickname = forwarddict['nickname']
+            fbadge = forwarddict['badge']
+            frole = forwarddict['role']
+            fmessage = forwarddict['message']
+
+            # avatar
+            avatar = None
+            try:
+                path = os.path.normpath(AVATARS_DIR+'/'+additional_data['forward']['av_id']+'.jpg')
+                avatar = open(path)
+                avatar = os.path.normpath(path)
+            except:
+                avatar = self.default_avatar
+            avatar_placement = buffer_.create_mark(None, iter_, True)
+            # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
+            app.thread_interface(self._update_avatar, [avatar, avatar_placement, additional_data['forward'], True])
+
+            # nickname
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, fnickname, len(fnickname.encode('utf-8')), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # badge
+            fbadge = " "+fbadge
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, fbadge, len(fbadge.encode('utf-8')), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.badgestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # role
+            frole = " "+frole
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, frole, len(frole.encode('utf-8')), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+            # message
+            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, fmessage, len(fmessage.encode('utf-8')), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            buffer_.apply_tag(self.text_forward_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+
+
+        else:
+
+            # message
+            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+            start_iter = buffer_.create_mark(None, iter_, True)
+            buffer_.insert_interactive(iter_, message, len(message.encode('utf-8')), True)
+            end_iter = buffer_.create_mark(None, iter_, True)
         # functional
         buffer_.apply_tag(text_functional, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
         # visual
@@ -490,7 +571,6 @@ class Base(object):
 
         nickname = None
         user_id = None
-        forward = None
         print(additional_data)
 
         if 'incomingtxt' in text_tags:
@@ -502,16 +582,9 @@ class Base(object):
                 user_id = additional_data['id']
                 role = additional_data['role']
                 badge = additional_data['badge']
-                try:
-                    forward = additional_data['forward']
-                except:
-                    forward = None
             else:
                 writer_jid = 'room'
                 message = real_text
-
-        if forward:
-            print(str(forward))
 
         if 'outgoingtxt' in text_tags:
             nickname = 'me'
@@ -550,10 +623,7 @@ class Base(object):
         buffer_.delete(prevline, iter_)
 
         if IS_MSG:
-            if forward:
-                self.print_forward(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
-            else:
-                self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
+            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
         else:
             self.print_server_info(iter_, buffer_, real_text)
 
@@ -630,7 +700,7 @@ class Base(object):
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
 
-    def _update_avatar(self, pixbuf, repl_start, additional_data):
+    def _update_avatar(self, pixbuf, repl_start, additional_data, IS_FORWARD = False):
 
         event_box = Gtk.EventBox()
         event_box.connect('enter-notify-event', self.on_enter_event)
@@ -659,9 +729,15 @@ class Base(object):
                 margin: 0px;
                 border-radius: 0%;
                 }'''
+                forward_tab = '''#Xavatar {
+                margin-left: 32px;
+                }
+                '''
                 # border-style: solid;
                 # border-width: 1;
                 gtkgui_helpers.add_css_to_widget(image, css)
+                if IS_FORWARD:
+                    gtkgui_helpers.add_css_to_widget(image, forward_tab)
                 image.set_name('Xavatar')
 
                 event_box.add(image)
