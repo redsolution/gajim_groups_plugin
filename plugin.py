@@ -72,30 +72,7 @@ class XabberGroupsPlugin(GajimPlugin):
             'chat_control_base': (self.connect_with_chat_control,
                                        self.disconnect_from_chat_control),
             'print_real_text': (self.print_real_text, None),
-            'roster_draw_contact': (self.connect_with_roster_draw_contact, None),
         }
-
-    @staticmethod
-    def is_groupchat(contact):
-        if hasattr(contact, 'is_groupchat'):
-            return contact.is_groupchat()
-        return False
-
-    @log_calls('XabberGroupsPlugin')
-    def connect_with_roster_draw_contact(self, roster, jid, account, contact):
-        renderer_num = 11 + roster.nb_ext_renderers
-        if self.is_groupchat(contact):
-            return
-        child_iters = roster._get_contact_iter(jid, account, contact, roster.model)
-        if not child_iters:
-            return
-        for iter_ in child_iters:
-            if roster.model[iter_][renderer_num] is None and contact.jid in allowjids:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(os.path.normpath(AVATARS_DIR+'/t.png'), 16, 16)
-                roster.model[iter_][renderer_num] = pixbuf
-
-
-# ==================================================================================================== #
 
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
@@ -352,19 +329,21 @@ class Base(object):
         self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
         # self.nickname_color.set_property("weight", Pango.Weight.BOLD)
         self.nickname_color.set_property("size_points", 10)
-        self.nickname_color.set_property("left-margin", 4)
+        self.nickname_color.set_property("indent", 4)
 
         self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=10)
-        self.text_style.set_property("left-margin", 36)
+        self.text_style.set_property("indent", 44)
+        # self.text_style.set_property("pixels-below-lines", 8)
+        self.text_style.set_property("pixels-inside-wrap", 8)
 
         self.text_forward_style = self.textview.tv.get_buffer().create_tag()
         # self.text_forward_style.set_property("left-margin", 32)
-        self.text_forward_style.set_property("left-margin", 66)
+        self.text_forward_style.set_property("indent", 80)
 
         self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
         self.info_style.set_property("foreground", "grey")
         self.info_style.set_property("style", Pango.Style.ITALIC)
-        self.info_style.set_property("left-margin", 62)
+        self.info_style.set_property("indent", 62)
 
         self.rolestyle = self.textview.tv.get_buffer().create_tag("role_text", size_points=10)
         self.rolestyle.set_property("foreground", "black")
@@ -421,7 +400,7 @@ class Base(object):
                     tag_table = self.textview.tv.get_buffer().get_tag_table()
                     tag = tag_table.lookup(tagname)
                     if message_data[2] == False:
-                        tag.set_property("paragraph-background", "#FFAAAA")
+                        tag.set_property("paragraph-background", "#FFDDDD")
                         message_data[2] = True
                         print(tagname)
                         print(additional_data)
@@ -451,7 +430,9 @@ class Base(object):
         except: forward = None
 
         all_message_start_iter = buffer_.create_mark(None, iter_, True)
+
         if not SAME_FROM:
+            buffer_.insert_interactive(iter_, " ", len(" ".encode('utf-8')), True)
             # avatar
             avatar = None
             try:
@@ -484,6 +465,7 @@ class Base(object):
             buffer_.insert_interactive(iter_, role, len(role.encode('utf-8')), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
 
         # mark message with id
         self.message_id += 1
@@ -504,8 +486,10 @@ class Base(object):
             frole = forwarddict['role']
             fmessage = forwarddict['message']
 
+            # buffer_.insert_interactive(iter_, '\n', len('\n'), True)
             # avatar
             avatar = None
+            buffer_.insert_interactive(iter_, " ", len(" ".encode('utf-8')), True)
             try:
                 path = os.path.normpath(AVATARS_DIR+'/'+additional_data['forward']['av_id']+'.jpg')
                 avatar = open(path)
@@ -535,11 +519,13 @@ class Base(object):
             buffer_.insert_interactive(iter_, frole, len(frole.encode('utf-8')), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
 
             # message
-            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
             start_iter = buffer_.create_mark(None, iter_, True)
+            #buffer_.insert_interactive(iter_, '\n', len('\n'), True)
             buffer_.insert_interactive(iter_, fmessage, len(fmessage.encode('utf-8')), True)
+            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
             end_iter = buffer_.create_mark(None, iter_, True)
             buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
             buffer_.apply_tag(self.text_forward_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
@@ -547,15 +533,32 @@ class Base(object):
 
         else:
 
+            splitmesage = message.split("\n")
+            linescount = len(splitmesage)
+
             # message
-            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
             start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, message, len(message.encode('utf-8')), True)
+            #buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+            for line in range(linescount):
+                line_start_iter = buffer_.create_mark(None, iter_, True)
+                buffer_.insert_interactive(iter_, splitmesage[line], len(splitmesage[line].encode('utf-8')), True)
+                buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+                line_end_iter = buffer_.create_mark(None, iter_, True)
+                if line == 0:
+                    spaceabove = self.textview.tv.get_buffer().create_tag()
+                    spaceabove.set_property("pixels-above-lines", 8)
+                    buffer_.apply_tag(spaceabove, buffer_.get_iter_at_mark(line_start_iter), buffer_.get_iter_at_mark(line_end_iter))
+                if line == linescount-1:
+                    spacebelow = self.textview.tv.get_buffer().create_tag()
+                    spacebelow.set_property("pixels-below-lines", 8)
+                    buffer_.apply_tag(spacebelow, buffer_.get_iter_at_mark(line_start_iter), buffer_.get_iter_at_mark(line_end_iter))
+
+
             end_iter = buffer_.create_mark(None, iter_, True)
+            # visual
+            buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
         # functional
         buffer_.apply_tag(text_functional, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
-        # visual
-        buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
         # pointer
         buffer_.apply_tag(self.pointer_cursor, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
 
@@ -566,7 +569,6 @@ class Base(object):
         end_iter = buffer_.create_mark(None, iter_, True)
         buffer_.apply_tag(self.info_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
-    # poligony poligon tra ta ta ta tah kaboom
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         nickname = None
@@ -618,7 +620,7 @@ class Base(object):
         # delete old "[time] name: "
         # if nickname:
         self.textview.plugin_modified = True
-        lineindex = buffer_.get_line_count() - 1
+        lineindex = buffer_.get_line_count() - 2
         prevline = buffer_.get_iter_at_line(lineindex)
         buffer_.delete(prevline, iter_)
 
@@ -717,7 +719,6 @@ class Base(object):
 
                 buffer_ = repl_start.get_buffer()
                 iter_ = buffer_.get_iter_at_mark(repl_start)
-                buffer_.insert(iter_, "\n")
                 anchor = buffer_.create_child_anchor(iter_)
 
                 if isinstance(pixbuf, GdkPixbuf.PixbufAnimation):
@@ -728,9 +729,12 @@ class Base(object):
                 css = '''#Xavatar {
                 margin: 0px;
                 border-radius: 0%;
+                margin-left: 8px;
+                margin-top: 8px;
                 }'''
                 forward_tab = '''#Xavatar {
-                margin-left: 32px;
+                margin-top: 2px;
+                margin-left: 44px;
                 }
                 '''
                 # border-style: solid;
