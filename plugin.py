@@ -196,13 +196,6 @@ class XabberGroupsPlugin(GajimPlugin):
             try: fmessage = fobj.getTag('x', namespace=XABBER_GC).getTag('body').getData()
             except: fmessage = fobj.getTag('body').getData()
 
-
-            fid = None
-            if name == fname:
-                fid = id
-            else:
-                fid = 'unknown'
-
             fjid = None
             try:
                 fjid = fobj.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
@@ -211,6 +204,19 @@ class XabberGroupsPlugin(GajimPlugin):
                     fjid = jid
                 else:
                     fjid = 'unknown'
+
+            # TODO get avatar id from forward message
+            fid = None
+            try:
+                fid = fobj.getTag('x', namespace=XABBER_GC).getTag('metadata',
+                                                                   namespace='urn:xmpp:avatar:metadata').getTag(
+                    'info').getAttr('id')
+            except:
+                if fuserid == userid:
+                    fid = id
+                else:
+                    fid = 'unknown'
+
             try:
                 frole = fobj.getTag('x', namespace=XABBER_GC).getTag('role').getData()
                 fbadge = fobj.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
@@ -431,41 +437,194 @@ class Base(object):
 
         all_message_start_iter = buffer_.create_mark(None, iter_, True)
 
-        if not SAME_FROM:
-            buffer_.insert_interactive(iter_, " ", len(" ".encode('utf-8')), True)
-            # avatar
-            avatar = None
+
+
+
+
+
+
+
+
+
+
+
+        # ===============================================================================
+
+
+
+
+
+
+
+
+
+
+
+        try:
+            path = os.path.normpath(AVATARS_DIR + '/' + additional_data['av_id'] + '.jpg')
+            file = open(path)
+            file = os.path.normpath(path)
+        except:
+            file = self.default_avatar
+
+        nickname = additional_data['nickname']
+        badge = additional_data['badge']
+        role = additional_data['role']
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        css = '''#Xavatar {margin: 4px;}'''
+        gtkgui_helpers.add_css_to_widget(image, css)
+        image.set_name('Xavatar')
+        imageBox = Gtk.Grid()
+        imageBox.add(image)
+        name_badge_role = Gtk.TextView()
+        name_badge_role_buffer = name_badge_role.get_buffer()
+
+
+        nickname_color = name_badge_role_buffer.create_tag("nickname", foreground="red")
+        nickname_color.set_property("size_points", 10)
+        nickname_color.set_property("indent", 4)
+
+        rolestyle = name_badge_role_buffer.create_tag("role_text", size_points=10)
+        rolestyle.set_property("foreground", "black")
+        rolestyle.set_property("indent", 4)
+
+        badgestyle = name_badge_role_buffer.create_tag("badge_text", size_points=8)
+        badgestyle.set_property("foreground", "grey")
+        badgestyle.set_property("indent", 4)
+
+
+        name_badge_role_iter_ = name_badge_role_buffer.get_end_iter()
+        start_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
+        name_badge_role_buffer.insert_interactive(name_badge_role_iter_, nickname, len(nickname.encode('utf-8')), True)
+        end_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
+        name_badge_role_buffer.apply_tag(nickname_color, name_badge_role_buffer.get_iter_at_mark(start_iter),
+                                         name_badge_role_buffer.get_iter_at_mark(end_iter))
+
+        badge = '  ' + badge
+        start_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
+        name_badge_role_buffer.insert_interactive(name_badge_role_iter_, badge, len(badge.encode('utf-8')), True)
+        end_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
+        name_badge_role_buffer.apply_tag(badgestyle, name_badge_role_buffer.get_iter_at_mark(start_iter),
+                                         name_badge_role_buffer.get_iter_at_mark(end_iter))
+
+        role = '  ' + role
+        start_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
+        name_badge_role_buffer.insert_interactive(name_badge_role_iter_, role, len(role.encode('utf-8')), True)
+        end_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
+        name_badge_role_buffer.apply_tag(rolestyle, name_badge_role_buffer.get_iter_at_mark(start_iter),
+                                         name_badge_role_buffer.get_iter_at_mark(end_iter))
+
+        if IS_FORWARD:
+
+            nickname = forward['nickname']
+            badge = forward['badge']
+            role = forward['role']
+
+            MessageGrid = Gtk.Grid()
+            anchor = buffer_.create_child_anchor(iter_)
+
             try:
-                path = os.path.normpath(AVATARS_DIR+'/'+additional_data['av_id']+'.jpg')
-                avatar = open(path)
-                avatar = os.path.normpath(path)
+                path = os.path.normpath(AVATARS_DIR + '/' + forward['av_id'] + '.jpg')
+                file2 = open(path)
+                file2 = os.path.normpath(path)
             except:
-                avatar = self.default_avatar
-            avatar_placement = buffer_.create_mark(None, iter_, True)
-            # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-            app.thread_interface(self._update_avatar, [avatar, avatar_placement, additional_data])
+                file2 = self.default_avatar
 
-        if not SAME_FROM:
-            # nickname
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, nickname, len(nickname.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            pixbuf2 = GdkPixbuf.Pixbuf.new_from_file_at_scale(file2, 32, 32, False)
+            image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
+            css = '''#Xavatar {margin: 4px;}'''
+            gtkgui_helpers.add_css_to_widget(image2, css)
+            image2.set_name('Xavatar')
 
-            # badge
-            badge = " "+badge
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, badge, len(badge.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.badgestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
+            imageBox2 = Gtk.Grid()
+            imageBox2.add(image2)
+            name_badge_role2 = Gtk.TextView()
+            name_badge_role2_buffer = name_badge_role2.get_buffer()
 
-            # role
-            role = " "+role
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, role, len(role.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
+
+
+            nickname_color = name_badge_role2_buffer.create_tag("nickname", foreground="red")
+            nickname_color.set_property("size_points", 10)
+            nickname_color.set_property("indent", 4)
+
+            rolestyle = name_badge_role2_buffer.create_tag("role_text", size_points=10)
+            rolestyle.set_property("foreground", "black")
+            rolestyle.set_property("indent", 4)
+
+            badgestyle = name_badge_role2_buffer.create_tag("badge_text", size_points=8)
+            badgestyle.set_property("foreground", "grey")
+            badgestyle.set_property("indent", 4)
+
+            name_badge_role_iter_ = name_badge_role2_buffer.get_end_iter()
+            start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
+            name_badge_role2_buffer.insert_interactive(name_badge_role_iter_, nickname,
+                                                       len(nickname.encode('utf-8')), True)
+            end_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
+            name_badge_role2_buffer.apply_tag(nickname_color, name_badge_role2_buffer.get_iter_at_mark(start_iter),
+                                              name_badge_role2_buffer.get_iter_at_mark(end_iter))
+            badge = '  ' + badge
+            start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
+            name_badge_role2_buffer.insert_interactive(name_badge_role_iter_, badge, len(badge.encode('utf-8')), True)
+            end_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
+            name_badge_role2_buffer.apply_tag(badgestyle, name_badge_role2_buffer.get_iter_at_mark(start_iter),
+                                              name_badge_role2_buffer.get_iter_at_mark(end_iter))
+
+            role = '  ' + role
+            start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
+            name_badge_role2_buffer.insert_interactive(name_badge_role_iter_, role, len(role.encode('utf-8')), True)
+            end_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
+            name_badge_role2_buffer.apply_tag(rolestyle, name_badge_role2_buffer.get_iter_at_mark(start_iter),
+                                             name_badge_role2_buffer.get_iter_at_mark(end_iter))
+
+            message_text = Gtk.TextView()
+            message_text.set_wrap_mode(Gtk.WrapMode.CHAR)
+            message_text.get_buffer().set_text(forward['message'])
+
+
+            MessageGrid.attach(imageBox, 0, 0, 1, 2)
+            MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
+            MessageGrid.attach(imageBox2, 1, 1, 1, 2)
+            MessageGrid.attach(name_badge_role2, 2, 1, 1, 1)
+            MessageGrid.attach(message_text, 2, 2, 8, 2)
+            event_box = Gtk.Box()
+            event_box.add(MessageGrid)
+            event_box.show_all()
+
+            self.textview.tv.add_child_at_anchor(event_box, anchor)
+            prent = '\n'
+            iter_ = buffer_.get_end_iter()
+            buffer_.insert_interactive(iter_, prent, len(prent.encode('utf-8')), True)
+
+        else:
+
+            MessageGrid = Gtk.Grid()
+            anchor = buffer_.create_child_anchor(iter_)
+
+            file = ''
+            try:
+                path = os.path.normpath(AVATARS_DIR + '/' + additional_data['av_id'] + '.jpg')
+                file = open(path)
+                file = os.path.normpath(path)
+            except:
+                file = self.default_avatar
+
+            message_text = Gtk.TextView()
+            message_text.set_wrap_mode(Gtk.WrapMode.CHAR)
+            message_text.get_buffer().set_text(additional_data['message'])
+
+            MessageGrid.attach(imageBox, 0, 0, 1, 2)
+            MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
+            MessageGrid.attach(message_text, 1, 1, 8, 2)
+            event_box = Gtk.Box()
+            event_box.add(MessageGrid)
+            event_box.show_all()
+
+            self.textview.tv.add_child_at_anchor(event_box, anchor)
+            prent = '\n'
+            iter_ = buffer_.get_end_iter()
+            buffer_.insert_interactive(iter_, prent, len(prent.encode('utf-8')), True)
+        # ===============================================================================
 
         # mark message with id
         self.message_id += 1
@@ -474,93 +633,22 @@ class Base(object):
         # def for text click
         text_functional.connect('event', self.interact_with_txt, tagname, additional_data)
         self.message_tags_props.append([tagname, additional_data, False])
+        end_iter = buffer_.create_mark(None, iter_, True)
+        # visual
+        # buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
 
 
-        if IS_FORWARD:
 
-            forwarddict = additional_data['forward']
-            print(additional_data['forward'])
-            print(forwarddict)
-            fnickname = forwarddict['nickname']
-            fbadge = forwarddict['badge']
-            frole = forwarddict['role']
-            fmessage = forwarddict['message']
-
-            # buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-            # avatar
-            avatar = None
-            buffer_.insert_interactive(iter_, " ", len(" ".encode('utf-8')), True)
-            try:
-                path = os.path.normpath(AVATARS_DIR+'/'+additional_data['forward']['av_id']+'.jpg')
-                avatar = open(path)
-                avatar = os.path.normpath(path)
-            except:
-                avatar = self.default_avatar
-            avatar_placement = buffer_.create_mark(None, iter_, True)
-            # add avatar to last message by link !!! FROM SOMEWHERE IN A COMPUTER !!! for now its default
-            app.thread_interface(self._update_avatar, [avatar, avatar_placement, additional_data['forward'], True])
-
-            # nickname
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, fnickname, len(fnickname.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.nickname_color, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-            # badge
-            fbadge = " "+fbadge
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, fbadge, len(fbadge.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.badgestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-            # role
-            frole = " "+frole
-            start_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.insert_interactive(iter_, frole, len(frole.encode('utf-8')), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.rolestyle, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-
-            # message
-            start_iter = buffer_.create_mark(None, iter_, True)
-            #buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-            buffer_.insert_interactive(iter_, fmessage, len(fmessage.encode('utf-8')), True)
-            buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-            end_iter = buffer_.create_mark(None, iter_, True)
-            buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-            buffer_.apply_tag(self.text_forward_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-
-        else:
-
-            splitmesage = message.split("\n")
-            linescount = len(splitmesage)
-
-            # message
-            start_iter = buffer_.create_mark(None, iter_, True)
-            #buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-            for line in range(linescount):
-                line_start_iter = buffer_.create_mark(None, iter_, True)
-                buffer_.insert_interactive(iter_, splitmesage[line], len(splitmesage[line].encode('utf-8')), True)
-                buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-                line_end_iter = buffer_.create_mark(None, iter_, True)
-                if line == 0:
-                    spaceabove = self.textview.tv.get_buffer().create_tag()
-                    spaceabove.set_property("pixels-above-lines", 8)
-                    buffer_.apply_tag(spaceabove, buffer_.get_iter_at_mark(line_start_iter), buffer_.get_iter_at_mark(line_end_iter))
-                if line == linescount-1:
-                    spacebelow = self.textview.tv.get_buffer().create_tag()
-                    spacebelow.set_property("pixels-below-lines", 8)
-                    buffer_.apply_tag(spacebelow, buffer_.get_iter_at_mark(line_start_iter), buffer_.get_iter_at_mark(line_end_iter))
-
-
-            end_iter = buffer_.create_mark(None, iter_, True)
-            # visual
-            buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
         # functional
         buffer_.apply_tag(text_functional, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
         # pointer
         buffer_.apply_tag(self.pointer_cursor, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
+
+
+
+
+
+
 
     def print_server_info(self, iter_, buffer_, info_message):
         start_iter = buffer_.create_mark(None, iter_, True)
@@ -702,56 +790,3 @@ class Base(object):
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
 
-    def _update_avatar(self, pixbuf, repl_start, additional_data, IS_FORWARD = False):
-
-        event_box = Gtk.EventBox()
-        event_box.connect('enter-notify-event', self.on_enter_event)
-        event_box.connect('leave-notify-event', self.on_leave_event)
-        event_box.connect('button-press-event', self.on_avatar_press_event, additional_data)
-
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(pixbuf, 32, 32, False)
-        # pixbuf = base64.b64decode(pixbuf)
-        # pixbuf = GdkPixbuf.Pixbuf.from_data(pixbuf)
-
-        def add_to_textview():
-            try:
-                at_end = self._get_at_end()
-
-                buffer_ = repl_start.get_buffer()
-                iter_ = buffer_.get_iter_at_mark(repl_start)
-                anchor = buffer_.create_child_anchor(iter_)
-
-                if isinstance(pixbuf, GdkPixbuf.PixbufAnimation):
-                    image = Gtk.Image.new_from_animation(pixbuf)
-                else:
-                    image = Gtk.Image.new_from_pixbuf(pixbuf)
-
-                css = '''#Xavatar {
-                margin: 0px;
-                border-radius: 0%;
-                margin-left: 8px;
-                margin-top: 8px;
-                }'''
-                forward_tab = '''#Xavatar {
-                margin-top: 2px;
-                margin-left: 44px;
-                }
-                '''
-                # border-style: solid;
-                # border-width: 1;
-                gtkgui_helpers.add_css_to_widget(image, css)
-                if IS_FORWARD:
-                    gtkgui_helpers.add_css_to_widget(image, forward_tab)
-                image.set_name('Xavatar')
-
-                event_box.add(image)
-                event_box.show_all()
-                self.textview.tv.add_child_at_anchor(event_box, anchor)
-
-                if at_end:
-                    self._scroll_to_end()
-            except Exception as ex:
-                log.exception("Exception while loading image %s", ex)
-            return False
-        # add to mainloop --> make call threadsafe
-        GLib.idle_add(add_to_textview)
