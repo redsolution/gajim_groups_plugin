@@ -328,93 +328,15 @@ class Base(object):
 
         self.previous_message_from = None
 
-        self.message_id = -1
-        self.message_tags_props = []
 
-        # styles
-        self.nickname_color = self.textview.tv.get_buffer().create_tag("nickname", foreground="red")
-        # self.nickname_color.set_property("weight", Pango.Weight.BOLD)
-        self.nickname_color.set_property("size_points", 10)
-        self.nickname_color.set_property("indent", 4)
+        self.box = Gtk.Box()
+        self.box.set_orientation(Gtk.Orientation.VERTICAL)
+        buffer = self.textview.tv.get_buffer()
+        iter = buffer.get_end_iter()
+        anchor = buffer.create_child_anchor(iter)
+        self.textview.tv.add_child_at_anchor(self.box, anchor)
 
-        self.text_style = self.textview.tv.get_buffer().create_tag("message_text", size_points=10)
-        self.text_style.set_property("indent", 44)
-        # self.text_style.set_property("pixels-below-lines", 8)
-        self.text_style.set_property("pixels-inside-wrap", 8)
 
-        self.text_forward_style = self.textview.tv.get_buffer().create_tag()
-        # self.text_forward_style.set_property("left-margin", 32)
-        self.text_forward_style.set_property("indent", 80)
-
-        self.info_style = self.textview.tv.get_buffer().create_tag("info_text", size_points=10)
-        self.info_style.set_property("foreground", "grey")
-        self.info_style.set_property("style", Pango.Style.ITALIC)
-        self.info_style.set_property("indent", 62)
-
-        self.rolestyle = self.textview.tv.get_buffer().create_tag("role_text", size_points=10)
-        self.rolestyle.set_property("foreground", "black")
-
-        self.badgestyle = self.textview.tv.get_buffer().create_tag("badge_text", size_points=8)
-        self.badgestyle.set_property("foreground", "grey")
-
-        self.pointer_cursor = self.textview.tv.get_buffer().create_tag("pointer_cursor")
-
-        # ==================================ui work with messages interaction========================== #
-        self.change_cursor = False
-        self.connect_signals()
-
-    def connect_signals(self):
-        tag_table = self.textview.tv.get_buffer().get_tag_table()
-        tag = tag_table.lookup("message_text")
-        if tag:
-            self.textview.tv.connect('motion_notify_event', self.on_textview_motion_notify_event)
-
-    def on_textview_motion_notify_event(self, widget, event):
-        # change cursor on the nicks
-        pointer_x, pointer_y = self.textview.tv.get_window(
-            Gtk.TextWindowType.TEXT).get_pointer()[1:3]
-        x, y = self.textview.tv.window_to_buffer_coords(Gtk.TextWindowType.TEXT,
-            pointer_x, pointer_y)
-        tags = self.textview.tv.get_iter_at_location(x, y)[1].get_tags()
-
-        if self.change_cursor:
-            self.textview.tv.get_window(Gtk.TextWindowType.TEXT).set_cursor(
-                Gdk.Cursor.new(Gdk.CursorType.XTERM))
-            self.change_cursor = False
-        for tag in tags:
-            tag_table = self.textview.tv.get_buffer().get_tag_table()
-            if tag == tag_table.lookup("pointer_cursor"):
-                self.textview.tv.get_window(Gtk.TextWindowType.TEXT).set_cursor(
-                    Gdk.Cursor.new(Gdk.CursorType.HAND2))
-            self.change_cursor = True
-
-    def interact_with_txt(self, texttag, widget, event, iter_, tagname, additional_data):
-        if event.type == Gdk.EventType.BUTTON_PRESS and event.button.button == 1:
-            # left mouse button clicked
-            begin_iter = iter_.copy()
-            # we get the begining of the tag
-            while not begin_iter.begins_tag(texttag):
-                begin_iter.backward_char()
-            end_iter = iter_.copy()
-            # we get the end of the tag
-            while not end_iter.ends_tag(texttag):
-                end_iter.forward_char()
-            buffer_ = self.textview.tv.get_buffer()
-            word = buffer_.get_text(begin_iter, end_iter, True)
-            for message_data in self.message_tags_props:
-                if message_data[0] == tagname:
-                    tag_table = self.textview.tv.get_buffer().get_tag_table()
-                    tag = tag_table.lookup(tagname)
-                    if message_data[2] == False:
-                        tag.set_property("paragraph-background", "#FFDDDD")
-                        message_data[2] = True
-                        print(tagname)
-                        print(additional_data)
-                    else:
-                        tag.set_property("paragraph-background", "#FFFFFF")
-                        message_data[2] = False
-
-    # ================================================================================ #
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -434,8 +356,6 @@ class Base(object):
             if forward != None:
                 IS_FORWARD = True
         except: forward = None
-
-        all_message_start_iter = buffer_.create_mark(None, iter_, True)
 
 
 
@@ -467,9 +387,17 @@ class Base(object):
         except:
             file = self.default_avatar
 
-        nickname = additional_data['nickname']
-        badge = additional_data['badge']
-        role = additional_data['role']
+        try:
+            nickname = additional_data['nickname']
+            badge = additional_data['badge']
+            role = additional_data['role']
+            message = additional_data['message']
+        except:
+            nickname = 'me'
+            badge = ''
+            role = ''
+            message = message
+
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
         image = Gtk.Image.new_from_pixbuf(pixbuf)
         css = '''#Xavatar {margin: 4px;}'''
@@ -483,15 +411,12 @@ class Base(object):
 
         nickname_color = name_badge_role_buffer.create_tag("nickname", foreground="red")
         nickname_color.set_property("size_points", 10)
-        nickname_color.set_property("indent", 4)
 
         rolestyle = name_badge_role_buffer.create_tag("role_text", size_points=10)
         rolestyle.set_property("foreground", "black")
-        rolestyle.set_property("indent", 4)
 
         badgestyle = name_badge_role_buffer.create_tag("badge_text", size_points=8)
         badgestyle.set_property("foreground", "grey")
-        badgestyle.set_property("indent", 4)
 
 
         name_badge_role_iter_ = name_badge_role_buffer.get_end_iter()
@@ -546,15 +471,12 @@ class Base(object):
 
             nickname_color = name_badge_role2_buffer.create_tag("nickname", foreground="red")
             nickname_color.set_property("size_points", 10)
-            nickname_color.set_property("indent", 4)
 
             rolestyle = name_badge_role2_buffer.create_tag("role_text", size_points=10)
             rolestyle.set_property("foreground", "black")
-            rolestyle.set_property("indent", 4)
 
             badgestyle = name_badge_role2_buffer.create_tag("badge_text", size_points=8)
             badgestyle.set_property("foreground", "grey")
-            badgestyle.set_property("indent", 4)
 
             name_badge_role_iter_ = name_badge_role2_buffer.get_end_iter()
             start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
@@ -577,10 +499,19 @@ class Base(object):
             name_badge_role2_buffer.apply_tag(rolestyle, name_badge_role2_buffer.get_iter_at_mark(start_iter),
                                              name_badge_role2_buffer.get_iter_at_mark(end_iter))
 
+
             message_text = Gtk.TextView()
             message_text.set_wrap_mode(Gtk.WrapMode.CHAR)
-            message_text.get_buffer().set_text(forward['message'])
+            message_text_buffer = message_text.get_buffer()
 
+            text_style = message_text_buffer.create_tag("message_text", size_points=10)
+
+            start_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
+            message_text_buffer.insert_interactive(message_text_buffer.get_end_iter(), forward['message'],
+                                                   len(forward['message'].encode('utf-8')), True)
+            end_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
+            message_text_buffer.apply_tag(text_style, message_text_buffer.get_iter_at_mark(start_iter),
+                                          message_text_buffer.get_iter_at_mark(end_iter))
 
             MessageGrid.attach(imageBox, 0, 0, 1, 2)
             MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
@@ -589,12 +520,29 @@ class Base(object):
             MessageGrid.attach(message_text, 2, 2, 8, 2)
             event_box = Gtk.Box()
             event_box.add(MessageGrid)
+
+            css = '''#eventbox_message {background-color: #ccffcc; }'''
+            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
+            name_badge_role.set_name('eventbox_message')
+            gtkgui_helpers.add_css_to_widget(name_badge_role2, css)
+            name_badge_role2.set_name('eventbox_message')
+            gtkgui_helpers.add_css_to_widget(message_text, css)
+            message_text.set_name('eventbox_message')
+            gtkgui_helpers.add_css_to_widget(event_box, css)
+            event_box.set_name('eventbox_message')
+
+            event_box.connect('enter-notify-event', self.on_enter_event)
+            event_box.connect('leave-notify-event', self.on_leave_event)
+            event_box.connect('button-press-event', self.on_avatar_press_event, forward)
             event_box.show_all()
 
             self.textview.tv.add_child_at_anchor(event_box, anchor)
             prent = '\n'
             iter_ = buffer_.get_end_iter()
             buffer_.insert_interactive(iter_, prent, len(prent.encode('utf-8')), True)
+
+            #button = Gtk.Button(label="Hell")
+            #self.box.pack_start(button, True, True, 0)
 
         else:
 
@@ -611,38 +559,51 @@ class Base(object):
 
             message_text = Gtk.TextView()
             message_text.set_wrap_mode(Gtk.WrapMode.CHAR)
-            message_text.get_buffer().set_text(additional_data['message'])
+            message_text_buffer = message_text.get_buffer()
+
+            text_style = message_text_buffer.create_tag("message_text", size_points=10)
+
+            start_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
+            message_text_buffer.insert_interactive(message_text_buffer.get_end_iter(), message,
+                                                   len(message.encode('utf-8')), True)
+            end_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
+            message_text_buffer.apply_tag(text_style, message_text_buffer.get_iter_at_mark(start_iter),
+                                          message_text_buffer.get_iter_at_mark(end_iter))
 
             MessageGrid.attach(imageBox, 0, 0, 1, 2)
             MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
             MessageGrid.attach(message_text, 1, 1, 8, 2)
-            event_box = Gtk.Box()
+            event_box = Gtk.EventBox()
             event_box.add(MessageGrid)
-            event_box.show_all()
+
+            css = '''#eventbox_message {background-color: #ffcccc; }'''
+            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
+            name_badge_role.set_name('eventbox_message')
+            gtkgui_helpers.add_css_to_widget(message_text, css)
+            message_text.set_name('eventbox_message')
+            gtkgui_helpers.add_css_to_widget(event_box, css)
+            event_box.set_name('eventbox_message')
+
+
+
+            #event_box.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA(1, .75, .75, 1))
+            #message_text.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA(1, .75, .75, 1))
+            #name_badge_role.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA(1, .75, .75, 1))
 
             self.textview.tv.add_child_at_anchor(event_box, anchor)
             prent = '\n'
             iter_ = buffer_.get_end_iter()
             buffer_.insert_interactive(iter_, prent, len(prent.encode('utf-8')), True)
+
+
+            event_box.connect('enter-notify-event', self.on_enter_event)
+            event_box.connect('leave-notify-event', self.on_leave_event)
+            event_box.connect('button-press-event', self.on_avatar_press_event, additional_data)
+            event_box.show_all()
+
+            #button1 = Gtk.Button(label="Hello")
+            #self.box.pack_start(button1, True, True, 0)
         # ===============================================================================
-
-        # mark message with id
-        self.message_id += 1
-        tagname = "message_text_"+str(self.message_id)
-        text_functional = self.textview.tv.get_buffer().create_tag(tagname)
-        # def for text click
-        text_functional.connect('event', self.interact_with_txt, tagname, additional_data)
-        self.message_tags_props.append([tagname, additional_data, False])
-        end_iter = buffer_.create_mark(None, iter_, True)
-        # visual
-        # buffer_.apply_tag(self.text_style, buffer_.get_iter_at_mark(start_iter), buffer_.get_iter_at_mark(end_iter))
-
-
-
-        # functional
-        buffer_.apply_tag(text_functional, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
-        # pointer
-        buffer_.apply_tag(self.pointer_cursor, buffer_.get_iter_at_mark(all_message_start_iter), buffer_.get_iter_at_mark(end_iter))
 
 
 
@@ -749,8 +710,8 @@ class Base(object):
         def on_cancel():
             return
 
-        # right click
-        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+        # left click
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
             if isme:
                 dialog = dialogs.NonModalConfirmationDialog('hello', sectext='it is your avatar',
                     on_response_ok=on_ok, on_response_cancel=on_cancel)
@@ -772,12 +733,9 @@ class Base(object):
                     on_response_ok=on_ok, on_response_cancel=on_cancel)
                 dialog.popup()
 
-        # left klick
-        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
-            self.on_avatar_right_click(event, additional_data)
-
-    def on_avatar_right_click(self, event, additional_data):
-        return
+        # right klick
+        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            return
 
     # Change mouse pointer to HAND2 when
     # mouse enter the eventbox with the image
