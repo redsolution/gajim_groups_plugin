@@ -331,7 +331,8 @@ class Base(object):
         self.messages_ids = []
 
         self.box = Gtk.HBox(True, 0, orientation=Gtk.Orientation.VERTICAL)
-        self.box.set_hexpand(True)
+        # self.box.set_hexpand(True)
+        # self.box.set_size_request(-1, -1)
         # self.box.set_homogeneous(False)
         # self.box.set_justify(Gtk.JUSTIFY_FILL)
         buffer = self.textview.tv.get_buffer()
@@ -578,6 +579,8 @@ class Base(object):
             MessageGrid.set_hexpand(True)
             event_box = Gtk.EventBox()
             event_box.add(MessageGrid)
+            MessageGrid.set_size_request(640, -1)
+            #event_box.set_size_request(640, -1)
 
             """
             css = '''#eventbox_message {background-color: #ffcccc; }'''
