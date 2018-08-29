@@ -330,12 +330,21 @@ class Base(object):
 
         self.messages_ids = []
 
-        self.box = Gtk.Box()
-        self.box.set_orientation(Gtk.Orientation.VERTICAL)
+        self.box = Gtk.HBox(True, 0, orientation=Gtk.Orientation.VERTICAL)
+        self.box.set_hexpand(True)
+        # self.box.set_homogeneous(False)
+        # self.box.set_justify(Gtk.JUSTIFY_FILL)
         buffer = self.textview.tv.get_buffer()
         iter = buffer.get_end_iter()
         anchor = buffer.create_child_anchor(iter)
         self.textview.tv.add_child_at_anchor(self.box, anchor)
+
+        css = '''#borderrr {
+        border: 1px solid;
+        border-radius: 6px; 
+        }'''
+        gtkgui_helpers.add_css_to_widget(self.box, css)
+        self.box.set_name('borderrr')
 
 
 
@@ -379,7 +388,8 @@ class Base(object):
 
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
         image = Gtk.Image.new_from_pixbuf(pixbuf)
-        css = '''#Xavatar {margin: 4px;}'''
+        css = '''#Xavatar {margin: 4px; 
+        border: 1px solid;}'''
         gtkgui_helpers.add_css_to_widget(image, css)
         image.set_name('Xavatar')
         imageBox = Gtk.EventBox()
@@ -387,8 +397,11 @@ class Base(object):
         imageBox.connect('enter-notify-event', self.on_enter_event)
         imageBox.connect('leave-notify-event', self.on_leave_event)
         imageBox.connect('button-press-event', self.on_avatar_press_event, additional_data)
+        imageFixBox = Gtk.Grid()
+        imageFixBox.add(imageBox)
 
         name_badge_role = Gtk.TextView()
+        name_badge_role.set_editable(False)
         name_badge_role_buffer = name_badge_role.get_buffer()
 
 
@@ -440,7 +453,8 @@ class Base(object):
 
             pixbuf2 = GdkPixbuf.Pixbuf.new_from_file_at_scale(file2, 32, 32, False)
             image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
-            css = '''#Xavatar {margin-left: 4px;}'''
+            css = '''#Xavatar {margin: 4px; 
+            border: 1px solid;}'''
             gtkgui_helpers.add_css_to_widget(image2, css)
             image2.set_name('Xavatar')
 
@@ -449,6 +463,9 @@ class Base(object):
             imageBox2.connect('enter-notify-event', self.on_enter_event)
             imageBox2.connect('leave-notify-event', self.on_leave_event)
             imageBox2.connect('button-press-event', self.on_avatar_press_event, forward)
+
+            imageFixBox2 = Gtk.Grid()
+            imageFixBox2.add(imageBox2)
 
             name_badge_role2 = Gtk.TextView()
             name_badge_role2_buffer = name_badge_role2.get_buffer()
@@ -496,11 +513,11 @@ class Base(object):
             message_text_buffer.apply_tag(text_style, message_text_buffer.get_iter_at_mark(start_iter),
                                           message_text_buffer.get_iter_at_mark(end_iter))
 
-            MessageGrid.attach(imageBox, 0, 0, 1, 2)
+            MessageGrid.attach(imageFixBox, 0, 0, 1, 2)
             MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
-            MessageGrid.attach(imageBox2, 1, 1, 1, 2)
+            MessageGrid.attach(imageFixBox2, 1, 1, 1, 2)
             MessageGrid.attach(name_badge_role2, 2, 1, 1, 1)
-            MessageGrid.attach(message_text, 2, 2, 8, 2)
+            MessageGrid.attach(message_text, 2, 2, 4, 2)
             event_box = Gtk.Box()
             event_box.add(MessageGrid)
 
@@ -547,9 +564,18 @@ class Base(object):
             message_text_buffer.apply_tag(text_style, message_text_buffer.get_iter_at_mark(start_iter),
                                           message_text_buffer.get_iter_at_mark(end_iter))
 
-            MessageGrid.attach(imageBox, 0, 0, 1, 2)
+            timebox = Gtk.Box()
+            css = '''#timebox {border: 1px solid;}'''
+            gtkgui_helpers.add_css_to_widget(timebox, css)
+            timebox.set_name('timebox')
+            timestamp = Gtk.Label('[time]')
+            timebox.add(timestamp)
+
+            MessageGrid.attach(imageFixBox, 0, 0, 1, 2)
             MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
-            MessageGrid.attach(message_text, 1, 1, 8, 2)
+            MessageGrid.attach(message_text, 1, 1, 3, 2)
+            MessageGrid.attach(timebox, 5, 0, 1, 3)
+            MessageGrid.set_hexpand(True)
             event_box = Gtk.EventBox()
             event_box.add(MessageGrid)
 
@@ -720,7 +746,8 @@ class Base(object):
         print('enter')
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.HAND2))
-        css = '''#eventbox_message {background-color: #ffcccc; }'''
+        css = '''#eventbox_message {background-color: #ffcccc; 
+        border-radius: 6px; }'''
         gtkgui_helpers.add_css_to_widget(nbr, css)
         nbr.set_name('eventbox_message')
         if nbr2 != None:
@@ -736,7 +763,8 @@ class Base(object):
         print('leave')
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
-        css = '''#eventbox_message {background-color: #ffffff; }'''
+        css = '''#eventbox_message {background-color: #ffffff; 
+        border-radius: 6px; }'''
         gtkgui_helpers.add_css_to_widget(nbr, css)
         nbr.set_name('eventbox_message')
         if nbr2 != None:
