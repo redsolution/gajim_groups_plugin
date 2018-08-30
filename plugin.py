@@ -331,22 +331,24 @@ class Base(object):
         self.messages_ids = []
 
         self.box = Gtk.HBox(True, 0, orientation=Gtk.Orientation.VERTICAL)
-        # self.box.set_hexpand(True)
-        # self.box.set_size_request(-1, -1)
+        self.box.set_hexpand(True)
+        self.box.set_halign(Gtk.Align.FILL)
+        self.box.set_size_request(300, 300)
         # self.box.set_homogeneous(False)
-        # self.box.set_justify(Gtk.JUSTIFY_FILL)
-        buffer = self.textview.tv.get_buffer()
-        iter = buffer.get_end_iter()
-        anchor = buffer.create_child_anchor(iter)
-        self.textview.tv.add_child_at_anchor(self.box, anchor)
+        #self.box.set_justify(Gtk.Justify.FILL)
+
+        #buffer = self.textview.tv.get_buffer()
+        #iter = buffer.get_end_iter()
+        #anchor = buffer.create_child_anchor(iter)
+        #self.textview.tv.add_child_at_anchor(self.box, anchor)
+
+        self.textview.tv.add(self.box)
 
         css = '''#borderrr {
         border: 1px solid;
-        border-radius: 6px; 
         }'''
         gtkgui_helpers.add_css_to_widget(self.box, css)
         self.box.set_name('borderrr')
-
 
 
     def deinit_handlers(self):
