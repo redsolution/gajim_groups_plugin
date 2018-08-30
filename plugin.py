@@ -330,19 +330,52 @@ class Base(object):
 
         self.messages_ids = []
 
-        self.box = Gtk.HBox(True, 0, orientation=Gtk.Orientation.VERTICAL)
-        self.box.set_hexpand(True)
+        self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
         self.box.set_halign(Gtk.Align.FILL)
-        self.box.set_size_request(300, 300)
-        # self.box.set_homogeneous(False)
+        self.box.set_hexpand(True)
+        self.box.expand = True
+
+        # not just expanding.
+        # it is now expanding, i need it to be exact scale
+        # every time when parent change scale
+
+        # self.box.set_size_request(desired_width, desired_height)
         #self.box.set_justify(Gtk.Justify.FILL)
 
         #buffer = self.textview.tv.get_buffer()
         #iter = buffer.get_end_iter()
         #anchor = buffer.create_child_anchor(iter)
         #self.textview.tv.add_child_at_anchor(self.box, anchor)
+        '''
+        text_buffer = self.textview.tv.get_buffer()
+        bounds = text_buffer.get_bounds()
+        text = text_buffer.get_text(*bounds)
 
-        self.textview.tv.add(self.box)
+        nlines = text.count("\n") + 1
+        layout = Pango.Layout(self.textview.tv.get_pango_context())
+        layout.set_markup("\n".join([str(x + 1) for x in range(nlines)]))
+        layout.set_alignment(Pango.Alignment.RIGHT)
+
+        width = layout.get_pixel_size()[0]'''
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.add(self.box)
+        scrolled.set_size_request(500, 500)
+        scrolled.set_halign(Gtk.Align.FILL)
+        scrolled.set_hexpand(True)
+        scrolled.set_vexpand(True)
+        scrolled.expand = True
+
+        def resize(widget, r):
+            scrolled.set_size_request(r.width, r.height)
+
+        self.textview.tv.connect_after('size-allocate', resize)
+
+        for i in range(50):
+            print(self.textview.tv.get_size_request())
+        scrolled.size_allocate(self.textview.tv.get_allocation())
+        # expand in textview doesnt work
+        self.textview.tv.add(scrolled)
 
         css = '''#borderrr {
         border: 1px solid;
@@ -350,6 +383,8 @@ class Base(object):
         gtkgui_helpers.add_css_to_widget(self.box, css)
         self.box.set_name('borderrr')
 
+    def resize(self, widget, r):
+        scrolled = r.width
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -581,8 +616,6 @@ class Base(object):
             MessageGrid.set_hexpand(True)
             event_box = Gtk.EventBox()
             event_box.add(MessageGrid)
-            MessageGrid.set_size_request(640, -1)
-            #event_box.set_size_request(640, -1)
 
             """
             css = '''#eventbox_message {background-color: #ffcccc; }'''
