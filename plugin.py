@@ -333,58 +333,25 @@ class Base(object):
         self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
         self.box.set_halign(Gtk.Align.FILL)
         self.box.set_hexpand(True)
-        self.box.expand = True
+        self.box.set_vexpand(False)
 
-        # not just expanding.
-        # it is now expanding, i need it to be exact scale
-        # every time when parent change scale
+        self.scrolled = Gtk.ScrolledWindow()
+        self.scrolled.add(self.box)
 
-        # self.box.set_size_request(desired_width, desired_height)
-        #self.box.set_justify(Gtk.Justify.FILL)
 
-        #buffer = self.textview.tv.get_buffer()
-        #iter = buffer.get_end_iter()
-        #anchor = buffer.create_child_anchor(iter)
-        #self.textview.tv.add_child_at_anchor(self.box, anchor)
-        '''
-        text_buffer = self.textview.tv.get_buffer()
-        bounds = text_buffer.get_bounds()
-        text = text_buffer.get_text(*bounds)
 
-        nlines = text.count("\n") + 1
-        layout = Pango.Layout(self.textview.tv.get_pango_context())
-        layout.set_markup("\n".join([str(x + 1) for x in range(nlines)]))
-        layout.set_alignment(Pango.Alignment.RIGHT)
+        self.textview.tv.connect_after('size-allocate', self.resize)
 
-        width = layout.get_pixel_size()[0]'''
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.add(self.box)
-        scrolled.set_size_request(500, 500)
-        scrolled.set_halign(Gtk.Align.FILL)
-        scrolled.set_hexpand(True)
-        scrolled.set_vexpand(True)
-        scrolled.expand = True
-
-        def resize(widget, r):
-            scrolled.set_size_request(r.width, r.height)
-
-        self.textview.tv.connect_after('size-allocate', resize)
-
-        for i in range(50):
-            print(self.textview.tv.get_size_request())
-        scrolled.size_allocate(self.textview.tv.get_allocation())
+        self.scrolled.size_allocate(self.textview.tv.get_allocation())
         # expand in textview doesnt work
-        self.textview.tv.add(scrolled)
-
-        css = '''#borderrr {
-        border: 1px solid;
-        }'''
-        gtkgui_helpers.add_css_to_widget(self.box, css)
-        self.box.set_name('borderrr')
+        self.textview.tv.add(self.scrolled)
 
     def resize(self, widget, r):
-        scrolled = r.width
+        self.scrolled.set_size_request(r.width, r.height)
+        messages = [m for m in self.box.get_children()]
+        for i in messages:
+            j = i.get_children()
+            j[1].set_size_request(r.width - (64+95), -1)
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -406,6 +373,8 @@ class Base(object):
         except: forward = None
 
         # get avatars
+        file = ''
+        file2 = ''
         try:
             path = os.path.normpath(AVATARS_DIR + '/' + additional_data['av_id'] + '.jpg')
             file = open(path)
@@ -413,233 +382,118 @@ class Base(object):
         except:
             file = self.default_avatar
 
-        try:
-            nickname = additional_data['nickname']
-            badge = additional_data['badge']
-            role = additional_data['role']
-            message = additional_data['message']
-        except:
-            nickname = 'me'
-            badge = ''
-            role = ''
-            message = message
-
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
-        image = Gtk.Image.new_from_pixbuf(pixbuf)
-        css = '''#Xavatar {margin: 4px; 
-        border: 1px solid;}'''
-        gtkgui_helpers.add_css_to_widget(image, css)
-        image.set_name('Xavatar')
-        imageBox = Gtk.EventBox()
-        imageBox.add(image)
-        imageBox.connect('enter-notify-event', self.on_enter_event)
-        imageBox.connect('leave-notify-event', self.on_leave_event)
-        imageBox.connect('button-press-event', self.on_avatar_press_event, additional_data)
-        imageFixBox = Gtk.Grid()
-        imageFixBox.add(imageBox)
-
-        name_badge_role = Gtk.TextView()
-        name_badge_role.set_editable(False)
-        name_badge_role_buffer = name_badge_role.get_buffer()
-
-
-        nickname_color = name_badge_role_buffer.create_tag("nickname", foreground="red")
-        nickname_color.set_property("size_points", 10)
-
-        rolestyle = name_badge_role_buffer.create_tag("role_text", size_points=10)
-        rolestyle.set_property("foreground", "black")
-
-        badgestyle = name_badge_role_buffer.create_tag("badge_text", size_points=8)
-        badgestyle.set_property("foreground", "grey")
-
-
-        name_badge_role_iter_ = name_badge_role_buffer.get_end_iter()
-        start_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
-        name_badge_role_buffer.insert_interactive(name_badge_role_iter_, nickname, len(nickname.encode('utf-8')), True)
-        end_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
-        name_badge_role_buffer.apply_tag(nickname_color, name_badge_role_buffer.get_iter_at_mark(start_iter),
-                                         name_badge_role_buffer.get_iter_at_mark(end_iter))
-
-        badge = '  ' + badge
-        start_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
-        name_badge_role_buffer.insert_interactive(name_badge_role_iter_, badge, len(badge.encode('utf-8')), True)
-        end_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
-        name_badge_role_buffer.apply_tag(badgestyle, name_badge_role_buffer.get_iter_at_mark(start_iter),
-                                         name_badge_role_buffer.get_iter_at_mark(end_iter))
-
-        role = '  ' + role
-        start_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
-        name_badge_role_buffer.insert_interactive(name_badge_role_iter_, role, len(role.encode('utf-8')), True)
-        end_iter = name_badge_role_buffer.create_mark(None, name_badge_role_iter_, True)
-        name_badge_role_buffer.apply_tag(rolestyle, name_badge_role_buffer.get_iter_at_mark(start_iter),
-                                         name_badge_role_buffer.get_iter_at_mark(end_iter))
-
         if IS_FORWARD:
-
-            nickname = forward['nickname']
-            badge = forward['badge']
-            role = forward['role']
-
-            MessageGrid = Gtk.Grid()
-
             try:
-                path = os.path.normpath(AVATARS_DIR + '/' + forward['av_id'] + '.jpg')
-                file2 = open(path)
-                file2 = os.path.normpath(path)
+                path2 = os.path.normpath(AVATARS_DIR + '/' + forward['av_id'] + '.jpg')
+                file2 = open(path2)
+                file2 = os.path.normpath(path2)
             except:
                 file2 = self.default_avatar
 
+        show = Gtk.Grid()
+        show2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        show2.set_homogeneous(False)
+        show3 = Gtk.Grid()
+        simplegrid = Gtk.Grid()
+        simplegrid.attach(show, 0, 0, 1, 1)
+        simplegrid.attach(show2, 1, 0, 1, 1)
+        simplegrid.attach(show3, 2, 0, 1, 1)
+        simplegrid.set_size_request(300, -1)
+        css = '''#messagegrid {
+        margin: 10px 0px;}'''
+        gtkgui_helpers.add_css_to_widget(simplegrid, css)
+        simplegrid.set_name('messagegrid')
+        self.box.add(simplegrid)
+
+        # SHOW1
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        css = '''#xavatar {
+        margin: 0px 16px;}'''
+        gtkgui_helpers.add_css_to_widget(image, css)
+        image.set_name('xavatar')
+        show.add(image)
+
+        # SHOW2
+        name_badge_role = Gtk.Label()
+        name_badge_role.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
+                                   '<span font_desc=\'12px\' color=\'black\'>%(badge)s</span> '
+                                   '<span font_desc=\'10px\' color=\'grey\'><small>%(role)s</small></span>'
+                                   '' % {'name': nickname,
+                                         'badge': badge,
+                                         'role': role})
+        name_badge_role.set_line_wrap(True)
+        name_badge_role.set_justify(Gtk.Justification.LEFT)
+        name_badge_role.set_halign(Gtk.Align.START)
+        css = '''#name_badge_role {
+        margin-bottom: 6px;}'''
+        gtkgui_helpers.add_css_to_widget(name_badge_role, css)
+        name_badge_role.set_name('name_badge_role')
+        if IS_FORWARD:
             pixbuf2 = GdkPixbuf.Pixbuf.new_from_file_at_scale(file2, 32, 32, False)
             image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
-            css = '''#Xavatar {margin: 4px; 
-            border: 1px solid;}'''
+            css = '''#xavatar-forward {
+            margin: 0px 8px;}'''
             gtkgui_helpers.add_css_to_widget(image2, css)
-            image2.set_name('Xavatar')
+            image2.set_name('xavatar-forward')
+            show_forward_av = Gtk.Grid()
+            show_forward_av.add(image2)
 
-            imageBox2 = Gtk.EventBox()
-            imageBox2.add(image2)
-            imageBox2.connect('enter-notify-event', self.on_enter_event)
-            imageBox2.connect('leave-notify-event', self.on_leave_event)
-            imageBox2.connect('button-press-event', self.on_avatar_press_event, forward)
-
-            imageFixBox2 = Gtk.Grid()
-            imageFixBox2.add(imageBox2)
-
-            name_badge_role2 = Gtk.TextView()
-            name_badge_role2_buffer = name_badge_role2.get_buffer()
-
-            nickname_color = name_badge_role2_buffer.create_tag("nickname", foreground="red")
-            nickname_color.set_property("size_points", 10)
-
-            rolestyle = name_badge_role2_buffer.create_tag("role_text", size_points=10)
-            rolestyle.set_property("foreground", "black")
-
-            badgestyle = name_badge_role2_buffer.create_tag("badge_text", size_points=8)
-            badgestyle.set_property("foreground", "grey")
-
-            name_badge_role_iter_ = name_badge_role2_buffer.get_end_iter()
-            start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
-            name_badge_role2_buffer.insert_interactive(name_badge_role_iter_, nickname,
-                                                       len(nickname.encode('utf-8')), True)
-            end_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
-            name_badge_role2_buffer.apply_tag(nickname_color, name_badge_role2_buffer.get_iter_at_mark(start_iter),
-                                              name_badge_role2_buffer.get_iter_at_mark(end_iter))
-            badge = '  ' + badge
-            start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
-            name_badge_role2_buffer.insert_interactive(name_badge_role_iter_, badge, len(badge.encode('utf-8')), True)
-            end_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
-            name_badge_role2_buffer.apply_tag(badgestyle, name_badge_role2_buffer.get_iter_at_mark(start_iter),
-                                              name_badge_role2_buffer.get_iter_at_mark(end_iter))
-
-            role = '  ' + role
-            start_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
-            name_badge_role2_buffer.insert_interactive(name_badge_role_iter_, role, len(role.encode('utf-8')), True)
-            end_iter = name_badge_role2_buffer.create_mark(None, name_badge_role_iter_, True)
-            name_badge_role2_buffer.apply_tag(rolestyle, name_badge_role2_buffer.get_iter_at_mark(start_iter),
-                                             name_badge_role2_buffer.get_iter_at_mark(end_iter))
-
-            message_text = Gtk.TextView()
-            #message_text.set_wrap_mode(Gtk.WrapMode.CHAR)
-            message_text_buffer = message_text.get_buffer()
-
-            text_style = message_text_buffer.create_tag("message_text", size_points=10)
-
-            start_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
-            message_text_buffer.insert_interactive(message_text_buffer.get_end_iter(), forward['message'],
-                                                   len(forward['message'].encode('utf-8')), True)
-            end_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
-            message_text_buffer.apply_tag(text_style, message_text_buffer.get_iter_at_mark(start_iter),
-                                          message_text_buffer.get_iter_at_mark(end_iter))
-
-            MessageGrid.attach(imageFixBox, 0, 0, 1, 2)
-            MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
-            MessageGrid.attach(imageFixBox2, 1, 1, 1, 2)
-            MessageGrid.attach(name_badge_role2, 2, 1, 1, 1)
-            MessageGrid.attach(message_text, 2, 2, 4, 2)
-            event_box = Gtk.Box()
-            event_box.add(MessageGrid)
-
-            """
-            css = '''#eventbox_message {background-color: #ccffcc; }'''
-            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
-            name_badge_role.set_name('eventbox_message')
+            name_badge_role2 = Gtk.Label()
+            name_badge_role2.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
+                                        '<span font_desc=\'12px\' color=\'black\'>%(badge)s</span> '
+                                        '<span font_desc=\'10px\' color=\'grey\'><small>%(role)s</small></span>'
+                                        '' % {'name': forward['nickname'],
+                                              'badge': forward['badge'],
+                                              'role': forward['role']})
+            name_badge_role2.set_line_wrap(True)
+            name_badge_role2.set_justify(Gtk.Justification.LEFT)
+            name_badge_role2.set_halign(Gtk.Align.START)
+            css = '''#name_badge_role {
+            margin-bottom: 6px;}'''
             gtkgui_helpers.add_css_to_widget(name_badge_role2, css)
-            name_badge_role2.set_name('eventbox_message')
-            gtkgui_helpers.add_css_to_widget(message_text, css)
-            message_text.set_name('eventbox_message')
-            gtkgui_helpers.add_css_to_widget(event_box, css)
-            event_box.set_name('eventbox_message')"""
+            name_badge_role2.set_name('name_badge_role')
 
-            event_box.show_all()
-            event_box.connect('enter-notify-event', self.on_enter_message, message_text, event_box, name_badge_role, name_badge_role2)
-            event_box.connect('leave-notify-event', self.on_leave_message, message_text, event_box, name_badge_role, name_badge_role2)
+            messagetext = Gtk.Label()
+            messagetext.set_text(forward['message'])
+            messagetext.set_line_wrap(True)
+            messagetext.set_justify(Gtk.Justification.LEFT)
+            messagetext.set_halign(Gtk.Align.START)
 
-            #self.textview.tv.add_child_at_anchor(event_box, anchor)
-            self.box.pack_start(event_box, True, True, 0)
+            message_data_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            message_data_container.set_homogeneous(False)
+            message_data_container.pack_start(name_badge_role2, True, True, 0)
+            message_data_container.pack_start(messagetext, True, True, 0)
+
+            messagecontainer = Gtk.Grid()
+            messagecontainer.attach(show_forward_av, 0, 0, 1, 1)
+            messagecontainer.attach(message_data_container, 1, 0, 1, 1)
+
 
         else:
+            messagecontainer = Gtk.Label()
+            messagecontainer.set_text(message)
+            messagecontainer.set_line_wrap(True)
+            messagecontainer.set_justify(Gtk.Justification.LEFT)
+            messagecontainer.set_halign(Gtk.Align.START)
+        # TODO fix trouble with text padding )
+        show2.pack_start(name_badge_role, True, True, 0)
+        show2.pack_start(messagecontainer, True, True, 0)
 
-            MessageGrid = Gtk.Grid()
-
-            file = ''
-            try:
-                path = os.path.normpath(AVATARS_DIR + '/' + additional_data['av_id'] + '.jpg')
-                file = open(path)
-                file = os.path.normpath(path)
-            except:
-                file = self.default_avatar
-
-            message_text = Gtk.TextView()
-            #message_text.set_wrap_mode(Gtk.WrapMode.CHAR)
-            message_text_buffer = message_text.get_buffer()
-
-            text_style = message_text_buffer.create_tag("message_text", size_points=10)
-
-            start_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
-            message_text_buffer.insert_interactive(message_text_buffer.get_end_iter(), message,
-                                                   len(message.encode('utf-8')), True)
-            end_iter = message_text_buffer.create_mark(None, message_text_buffer.get_end_iter(), True)
-            message_text_buffer.apply_tag(text_style, message_text_buffer.get_iter_at_mark(start_iter),
-                                          message_text_buffer.get_iter_at_mark(end_iter))
-
-            timebox = Gtk.Box()
-            css = '''#timebox {border: 1px solid;}'''
-            gtkgui_helpers.add_css_to_widget(timebox, css)
-            timebox.set_name('timebox')
-            timestamp = Gtk.Label('[time]')
-            timebox.add(timestamp)
-
-            MessageGrid.attach(imageFixBox, 0, 0, 1, 2)
-            MessageGrid.attach(name_badge_role, 1, 0, 2, 1)
-            MessageGrid.attach(message_text, 1, 1, 3, 2)
-            MessageGrid.attach(timebox, 5, 0, 1, 3)
-            MessageGrid.set_hexpand(True)
-            event_box = Gtk.EventBox()
-            event_box.add(MessageGrid)
-
-            """
-            css = '''#eventbox_message {background-color: #ffcccc; }'''
-            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
-            name_badge_role.set_name('eventbox_message')
-            gtkgui_helpers.add_css_to_widget(message_text, css)
-            message_text.set_name('eventbox_message')
-            gtkgui_helpers.add_css_to_widget(event_box, css)
-            event_box.set_name('eventbox_message')"""
-
-            event_box.show_all()
-            message_text.connect('enter-notify-event', self.on_enter_message, message_text, event_box, name_badge_role)
-            message_text.connect('leave-notify-event', self.on_leave_message, message_text, event_box, name_badge_role)
-            event_box.connect('enter-notify-event', self.on_enter_message, message_text, event_box, name_badge_role)
-            event_box.connect('leave-notify-event', self.on_leave_message, message_text, event_box, name_badge_role)
-
-            #self.textview.tv.add_child_at_anchor(event_box, anchor)
-            self.box.pack_start(event_box, True, True, 0)
-        # ===============================================================================
+        # SHOW3
+        timestamp_label = Gtk.Label()
+        timestamp_label.set_markup('<span font_desc=\'12px\' color=\'#BDBDBD\'>14:44:42</span>')
+        css = '''#xtimestamp {
+        margin: 0px 16px;}'''
+        gtkgui_helpers.add_css_to_widget(timestamp_label, css)
+        timestamp_label.set_name('xtimestamp')
+        show3.add(timestamp_label)
 
 
-
-
-
+        show.set_size_request(64, -1)
+        show3.set_size_request(95, -1)
+        self.box.add(simplegrid)
+        simplegrid.show_all()
 
 
     def print_server_info(self, iter_, buffer_, info_message):
@@ -675,7 +529,6 @@ class Base(object):
 
         SAME_FROM = False
         IS_MSG = False
-        # if nickname is exist
         if nickname:
             IS_MSG = True
 
@@ -696,13 +549,14 @@ class Base(object):
         if not iter_:
             iter_ = buffer_.get_end_iter()
 
-        # delete old "[time] name: "
-        # if nickname:
 
+        # delete old "[time] name: "
         self.textview.plugin_modified = True
         lineindex = buffer_.get_line_count() - 1
         prevline = buffer_.get_iter_at_line(lineindex)
         buffer_.delete(prevline, iter_)
+
+
 
         if IS_MSG:
             self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
@@ -780,36 +634,22 @@ class Base(object):
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
 
 
-    def on_enter_message(self, eb, event, message, event_box, nbr, nbr2=None):
+    def on_enter_message(self, eb, event, widgets):
         print('enter')
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.HAND2))
-        css = '''#eventbox_message {background-color: #ffcccc; 
-        border-radius: 6px; }'''
-        gtkgui_helpers.add_css_to_widget(nbr, css)
-        nbr.set_name('eventbox_message')
-        if nbr2 != None:
-            gtkgui_helpers.add_css_to_widget(nbr2, css)
-            nbr2.set_name('eventbox_message')
-        gtkgui_helpers.add_css_to_widget(message, css)
-        message.set_name('eventbox_message')
-        gtkgui_helpers.add_css_to_widget(event_box, css)
-        event_box.set_name('eventbox_message')
+        css = '''#eventbox_message {background-color: #FFEBEE;'''
+        for widget in widgets:
+            gtkgui_helpers.add_css_to_widget(widget, css)
+            widget.set_name('eventbox_message')
 
     # Change mouse pointer to default when mouse leaves the eventbox
-    def on_leave_message(self, eb, event, message, event_box, nbr, nbr2=None):
+    def on_leave_message(self, eb, event, widgets):
         print('leave')
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
-        css = '''#eventbox_message {background-color: #ffffff; 
-        border-radius: 6px; }'''
-        gtkgui_helpers.add_css_to_widget(nbr, css)
-        nbr.set_name('eventbox_message')
-        if nbr2 != None:
-            gtkgui_helpers.add_css_to_widget(nbr2, css)
-            nbr2.set_name('eventbox_message')
-        gtkgui_helpers.add_css_to_widget(message, css)
-        message.set_name('eventbox_message')
-        gtkgui_helpers.add_css_to_widget(event_box, css)
-        event_box.set_name('eventbox_message')
+        css = '''#eventbox_message {background-color: #FFFFFF;'''
+        for widget in widgets:
+            gtkgui_helpers.add_css_to_widget(widget, css)
+            widget.set_name('eventbox_message')
 
