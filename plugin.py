@@ -353,6 +353,10 @@ class Base(object):
             j = i.get_children()
             j[1].set_size_request(r.width - (64+95), -1)
 
+            # in case of only grid
+            # j = i.get_children()
+            # j[1].set_size_request(r.width - (64+95), -1)
+
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
         # to prevent circular references among objects
@@ -412,23 +416,30 @@ class Base(object):
         margin: 0px 16px;}'''
         gtkgui_helpers.add_css_to_widget(image, css)
         image.set_name('xavatar')
-        show.add(image)
+        avatar_event_box = Gtk.EventBox()
+        avatar_event_box.connect('button-press-event', self.on_avatar_press_event, additional_data)
+        avatar_event_box.connect('enter-notify-event', self.on_enter_event)
+        avatar_event_box.connect('leave-notify-event', self.on_leave_event)
+        if not SAME_FROM:
+            avatar_event_box.add(image)
+        show.add(avatar_event_box)
 
-        # SHOW2
-        name_badge_role = Gtk.Label()
-        name_badge_role.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
-                                   '<span font_desc=\'12px\' color=\'black\'>%(badge)s</span> '
-                                   '<span font_desc=\'10px\' color=\'grey\'><small>%(role)s</small></span>'
-                                   '' % {'name': nickname,
-                                         'badge': badge,
-                                         'role': role})
-        name_badge_role.set_line_wrap(True)
-        name_badge_role.set_justify(Gtk.Justification.LEFT)
-        name_badge_role.set_halign(Gtk.Align.START)
-        css = '''#name_badge_role {
-        margin-bottom: 6px;}'''
-        gtkgui_helpers.add_css_to_widget(name_badge_role, css)
-        name_badge_role.set_name('name_badge_role')
+        if not SAME_FROM:
+            # SHOW2
+            name_badge_role = Gtk.Label()
+            name_badge_role.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
+                                       '<span font_desc=\'12px\' color=\'black\'>%(badge)s</span> '
+                                       '<span font_desc=\'10px\' color=\'grey\'><small>%(role)s</small></span>'
+                                       '' % {'name': nickname,
+                                             'badge': badge,
+                                             'role': role})
+            name_badge_role.set_line_wrap(True)
+            name_badge_role.set_justify(Gtk.Justification.LEFT)
+            name_badge_role.set_halign(Gtk.Align.START)
+            css = '''#name_badge_role {
+            margin-bottom: 6px;}'''
+            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
+            name_badge_role.set_name('name_badge_role')
         if IS_FORWARD:
             pixbuf2 = GdkPixbuf.Pixbuf.new_from_file_at_scale(file2, 32, 32, False)
             image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
@@ -436,8 +447,14 @@ class Base(object):
             margin: 0px 8px;}'''
             gtkgui_helpers.add_css_to_widget(image2, css)
             image2.set_name('xavatar-forward')
+
+            avatar2_event_box = Gtk.EventBox()
+            avatar2_event_box.connect('button-press-event', self.on_avatar_press_event, forward)
+            avatar2_event_box.add(image2)
+
+
             show_forward_av = Gtk.Grid()
-            show_forward_av.add(image2)
+            show_forward_av.add(avatar2_event_box)
 
             name_badge_role2 = Gtk.Label()
             name_badge_role2.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
@@ -455,6 +472,10 @@ class Base(object):
             name_badge_role2.set_name('name_badge_role')
 
             messagetext = Gtk.Label()
+            css = '''#message_font_size {
+            font-size: 12px;}'''
+            gtkgui_helpers.add_css_to_widget(messagetext, css)
+            messagetext.set_name('message_font_size')
             messagetext.set_text(forward['message'])
             messagetext.set_line_wrap(True)
             messagetext.set_justify(Gtk.Justification.LEFT)
@@ -472,17 +493,22 @@ class Base(object):
 
         else:
             messagecontainer = Gtk.Label()
+            css = '''#message_font_size {
+            font-size: 12px;}'''
+            gtkgui_helpers.add_css_to_widget(messagecontainer, css)
+            messagecontainer.set_name('message_font_size')
             messagecontainer.set_text(message)
             messagecontainer.set_line_wrap(True)
             messagecontainer.set_justify(Gtk.Justification.LEFT)
             messagecontainer.set_halign(Gtk.Align.START)
         # TODO fix trouble with text padding )
-        show2.pack_start(name_badge_role, True, True, 0)
+        if not SAME_FROM:
+            show2.pack_start(name_badge_role, True, True, 0)
         show2.pack_start(messagecontainer, True, True, 0)
 
         # SHOW3
         timestamp_label = Gtk.Label()
-        timestamp_label.set_markup('<span font_desc=\'12px\' color=\'#BDBDBD\'>14:44:42</span>')
+        timestamp_label.set_markup('<span font_desc=\'12px\' color=\'#666\'>14:44:42</span>')
         css = '''#xtimestamp {
         margin: 0px 16px;}'''
         gtkgui_helpers.add_css_to_widget(timestamp_label, css)
@@ -492,15 +518,16 @@ class Base(object):
 
         show.set_size_request(64, -1)
         show3.set_size_request(95, -1)
-        self.box.add(simplegrid)
+
+        event_box = Gtk.EventBox()
+        # event_box.add(simplegrid)
+        # wids = [show, show2, show3]
+        # event_box.connect('button-press-event', self.on_avatar_press_event, forward)
+
+        self.box.pack_start(simplegrid, True, True, 0)
         simplegrid.show_all()
 
 
-    def print_server_info(self, iter_, buffer_, info_message):
-        start_iter = buffer_.create_mark(None, iter_, True)
-        buffer_.insert_interactive(iter_, info_message, len(info_message.encode('utf-8')), True)
-        buffer_.insert_interactive(iter_, '\n', len('\n'), True)
-        end_iter = buffer_.create_mark(None, iter_, True)
 
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
@@ -567,23 +594,6 @@ class Base(object):
 
 
 
-
-    def _get_at_end(self):
-        try:
-            # Gajim 1.0.0
-            return self.textview.at_the_end()
-        except AttributeError:
-            # Gajim 1.0.1
-            return self.textview.autoscroll
-
-    def _scroll_to_end(self):
-        try:
-            # Gajim 1.0.0
-            self.textview.scroll_to_end_iter()
-        except AttributeError:
-            # Gajim 1.0.1
-            self.textview.scroll_to_end()
-
     def on_avatar_press_event(self, eb, event, additional_data):
         isme = False
         try: h = additional_data['nickname']
@@ -632,24 +642,3 @@ class Base(object):
     def on_leave_event(self, eb, event):
         self.textview.tv.get_window(
             Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
-
-
-    def on_enter_message(self, eb, event, widgets):
-        print('enter')
-        self.textview.tv.get_window(
-            Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.HAND2))
-        css = '''#eventbox_message {background-color: #FFEBEE;'''
-        for widget in widgets:
-            gtkgui_helpers.add_css_to_widget(widget, css)
-            widget.set_name('eventbox_message')
-
-    # Change mouse pointer to default when mouse leaves the eventbox
-    def on_leave_message(self, eb, event, widgets):
-        print('leave')
-        self.textview.tv.get_window(
-            Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
-        css = '''#eventbox_message {background-color: #FFFFFF;'''
-        for widget in widgets:
-            gtkgui_helpers.add_css_to_widget(widget, css)
-            widget.set_name('eventbox_message')
-
