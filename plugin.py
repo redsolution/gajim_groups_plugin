@@ -175,7 +175,6 @@ class XabberGroupsPlugin(GajimPlugin):
         badge = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
 
 
-        # TODO check for forwarding
         forwarded = obj.stanza.getTag('forwarded', namespace='urn:xmpp:forward:0')
         forward_m = None
         if forwarded:
@@ -205,7 +204,7 @@ class XabberGroupsPlugin(GajimPlugin):
                 else:
                     fjid = 'unknown'
 
-            # TODO get avatar id from forward message
+
             fid = None
             try:
                 fid = fobj.getTag('x', namespace=XABBER_GC).getTag('metadata',
@@ -328,7 +327,8 @@ class Base(object):
 
         self.previous_message_from = None
 
-        self.messages_ids = []
+        self.current_message_id = -1
+        self.chosen_messages_data = []
 
         self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
         self.box.set_halign(Gtk.Align.FILL)
@@ -351,7 +351,7 @@ class Base(object):
         messages = [m for m in self.box.get_children()]
         for i in messages:
             j = i.get_children()
-            j[1].set_size_request(r.width - (64+95), -1)
+            j[2].set_size_request(r.width - (64+95), -1)
 
             # in case of only grid
             # j = i.get_children()
@@ -402,12 +402,11 @@ class Base(object):
         simplegrid.attach(show, 0, 0, 1, 1)
         simplegrid.attach(show2, 1, 0, 1, 1)
         simplegrid.attach(show3, 2, 0, 1, 1)
-        simplegrid.set_size_request(300, -1)
         css = '''#messagegrid {
-        margin: 10px 0px;}'''
+        padding: 10px 0px;}'''
         gtkgui_helpers.add_css_to_widget(simplegrid, css)
         simplegrid.set_name('messagegrid')
-        self.box.add(simplegrid)
+        #self.box.add(simplegrid)
 
         # SHOW1
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
@@ -450,6 +449,8 @@ class Base(object):
 
             avatar2_event_box = Gtk.EventBox()
             avatar2_event_box.connect('button-press-event', self.on_avatar_press_event, forward)
+            avatar2_event_box.connect('enter-notify-event', self.on_enter_event)
+            avatar2_event_box.connect('leave-notify-event', self.on_leave_event)
             avatar2_event_box.add(image2)
 
 
@@ -519,10 +520,13 @@ class Base(object):
         show.set_size_request(64, -1)
         show3.set_size_request(95, -1)
 
-        event_box = Gtk.EventBox()
-        # event_box.add(simplegrid)
-        # wids = [show, show2, show3]
-        # event_box.connect('button-press-event', self.on_avatar_press_event, forward)
+        # EventBox kostyl
+        Message_eventBox = Gtk.EventBox()
+        simplegrid.attach(Message_eventBox, 0, 0, 3, 1)
+        self.current_message_id += 1
+        Message_eventBox.connect('button-press-event', self.on_message_click, additional_data, self.current_message_id, simplegrid)
+        Message_eventBox.connect('enter-notify-event', self.on_enter_event)
+        Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
         self.box.pack_start(simplegrid, True, True, 0)
         simplegrid.show_all()
@@ -590,7 +594,6 @@ class Base(object):
         #else:
             #self.print_server_info(iter_, buffer_, real_text)
 
-        # TODO fix cyrillic
 
 
 
@@ -634,11 +637,35 @@ class Base(object):
 
     # Change mouse pointer to HAND2 when
     # mouse enter the eventbox with the image
+    # TODO fix events
     def on_enter_event(self, eb, event):
-        self.textview.tv.get_window(
-            Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.HAND2))
+        print('enter')
+        return
 
     # Change mouse pointer to default when mouse leaves the eventbox
     def on_leave_event(self, eb, event):
-        self.textview.tv.get_window(
-            Gtk.TextWindowType.TEXT).set_cursor(Gdk.Cursor(Gdk.CursorType.XTERM))
+        print('leave')
+        return
+
+    def on_message_click(self, eb, event, data, id, widget):
+        for message_data in self.chosen_messages_data:
+            if message_data[0] == id:
+                print('activate')
+                self.chosen_messages_data.remove(message_data)
+                print(self.chosen_messages_data)
+                css = '''#messagegrid {
+                padding: 10px 0px;
+                background-color: #FFFFFF;}'''
+                gtkgui_helpers.add_css_to_widget(widget, css)
+                widget.set_name('messagegrid')
+                return
+
+        print('deactivate')
+        new_message_data = [id, data]
+        self.chosen_messages_data.append(new_message_data)
+        print(self.chosen_messages_data)
+        css = '''#messagegrid {
+        padding: 10px 0px;
+        background-color: #FFCCCC;}'''
+        gtkgui_helpers.add_css_to_widget(widget, css)
+        widget.set_name('messagegrid')
