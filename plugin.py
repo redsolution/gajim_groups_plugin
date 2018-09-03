@@ -528,7 +528,7 @@ class Base(object):
         Message_eventBox.connect('enter-notify-event', self.on_enter_event)
         Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
-        self.box.pack_start(simplegrid, True, True, 0)
+        self.box.pack_start(simplegrid, False, False, 0)
         simplegrid.show_all()
 
 
