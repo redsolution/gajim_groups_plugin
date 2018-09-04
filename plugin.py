@@ -67,6 +67,7 @@ class XabberGroupsPlugin(GajimPlugin):
         self.events_handlers = {
             'decrypted-message-received': (ged.PREGUI1, self._nec_decrypted_message_received),
             'raw-iq-received': (ged.CORE, self._nec_iq_received),
+            'message-outgoing': (ged.OUT_PRECORE, self._nec_message_outgoing)
             # TODO _nec_message_outgoing
         }
         self.gui_extension_points = {
@@ -74,6 +75,11 @@ class XabberGroupsPlugin(GajimPlugin):
                                        self.disconnect_from_chat_control),
             'print_real_text': (self.print_real_text, None),
         }
+
+
+    def _nec_message_outgoing(self, obj):
+        return
+
 
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
@@ -737,13 +743,10 @@ class Base(object):
         widget.set_name('messagegrid')
         self.button_copy.show()
         self.button_forward.show()
-        self.button_forward.set_label('FORWARD '+str(len(self.chosen_messages_data)))
         self.button_reply.show()
 
     def create_buttons(self, chat_control):
-        # create /me button
         actions_hbox = chat_control.xml.get_object('hbox')
-
 
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
         self.button_copy.set_tooltip_text(_('copy text from messages widgets (press ctrl+v to paste it)'))
@@ -763,27 +766,54 @@ class Base(object):
         chat_control.handlers[id_] = self.button_reply
 
 
+        self.button_copy.get_style_context().add_class('chatcontrol-actionbar-button')
+        self.button_forward.get_style_context().add_class('chatcontrol-actionbar-button')
+        self.button_reply.get_style_context().add_class('chatcontrol-actionbar-button')
+
         actions_hbox.pack_start(self.button_copy, False, False, 0)
         actions_hbox.pack_start(self.button_forward, False, False, 0)
         actions_hbox.pack_start(self.button_reply, False, False, 0)
 
-        actions_hbox.reorder_child(self.button_copy, len(actions_hbox.get_children()) - 3)
-        actions_hbox.reorder_child(self.button_forward, len(actions_hbox.get_children()) - 2)
-        actions_hbox.reorder_child(self.button_reply, len(actions_hbox.get_children()) - 1)
+        actions_hbox.reorder_child(self.button_copy, len(actions_hbox.get_children()) - 4)
+        actions_hbox.reorder_child(self.button_forward, len(actions_hbox.get_children()) - 3)
+        actions_hbox.reorder_child(self.button_reply, len(actions_hbox.get_children()) - 2)
+
+        self.button_copy.show()
+        self.button_forward.show()
+        self.button_reply.show()
+        self.button_copy.hide()
+        self.button_forward.hide()
+        self.button_reply.hide()
+
+
+    def remove_message_selection(self):
+        self.chosen_messages_data = []
+
+        self.button_copy.hide()
+        self.button_forward.hide()
+        self.button_reply.hide()
+
+        messages = [m for m in self.box.get_children()]
+        for widget in messages:
+            css = '''#messagegrid {
+            padding: 10px 0px;
+            background-color: #FFFFFF;}'''
+            gtkgui_helpers.add_css_to_widget(widget, css)
+            widget.set_name('messagegrid')
+
 
 
     def on_copytext_clicked(self, widget):
-        print('copy clicked!')
         copied_text = ''
-        for i in self.chosen_messages_data:
+        for data in self.chosen_messages_data:
             try:
-                copied_text += (
-                    '['+i[2]+']' + i[3] + ': ' + i[4] + '\n'
-                )
+                copied_text += '[' + data[2] + ']' + data[3] + ': ' + data[4] + '\n'
                 # TODO add name, badge etc. to 'me' messages
             finally:
-                copied_text+=''
-        print(copied_text)
+                copied_text += ''
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(copied_text, -1)
+        self.remove_message_selection()
 
     def on_forward_clicked(self, widget):
         print('forward clicked!')
