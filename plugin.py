@@ -277,7 +277,7 @@ class XabberGroupsPlugin(GajimPlugin):
             self.send_ask_for_rights(chat_control.contact, jid)
         if account not in self.controls and jid in allowjids:
             self.controls[account] = {}
-        self.controls[account][jid] = Base(self, chat_control.conv_textview)
+        self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -318,7 +318,7 @@ class XabberGroupsPlugin(GajimPlugin):
 
 class Base(object):
 
-    def __init__(self, plugin, textview):
+    def __init__(self, plugin, textview, chat_control=None):
         # recieve textview to work with
         self.plugin = plugin
         self.textview = textview
@@ -331,6 +331,9 @@ class Base(object):
         self.current_message_id = -1
         self.chosen_messages_data = []
 
+        if chat_control:
+            self.create_buttons(chat_control)
+
         self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
         self.box.set_halign(Gtk.Align.FILL)
         self.box.set_hexpand(True)
@@ -338,8 +341,6 @@ class Base(object):
 
         self.scrolled = Gtk.ScrolledWindow()
         self.scrolled.add(self.box)
-
-
 
         self.textview.tv.connect_after('size-allocate', self.resize)
 
@@ -411,7 +412,7 @@ class Base(object):
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
         image = Gtk.Image.new_from_pixbuf(pixbuf)
         css = '''#xavatar {
-        margin: 0px 16px;}'''
+        margin: 4px 16px 0px 16px; }'''
         gtkgui_helpers.add_css_to_widget(image, css)
         image.set_name('xavatar')
         avatar_event_box = Gtk.EventBox()
@@ -425,12 +426,16 @@ class Base(object):
         if not SAME_FROM:
             # SHOW2
             name_badge_role = Gtk.Grid()
+            css = '''#name_badge_role {
+            margin-bottom: 6px;}'''
+            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
+            name_badge_role.set_name('name_badge_role')
 
             info_name = Gtk.Label(nickname)
             css = '''#info_name {
             color: #D32F2F;
             font-size: 12px;
-            margin: 2px;}'''
+            margin-right: 4px;}'''
             gtkgui_helpers.add_css_to_widget(info_name, css)
             info_name.set_name('info_name')
 
@@ -438,7 +443,7 @@ class Base(object):
             css = '''#info_badge {
             color: black;
             font-size: 10px;
-            margin: 2px;}'''
+            margin-right: 4px;}'''
             gtkgui_helpers.add_css_to_widget(info_badge, css)
             info_badge.set_name('info_badge')
 
@@ -461,7 +466,8 @@ class Base(object):
             pixbuf2 = GdkPixbuf.Pixbuf.new_from_file_at_scale(file2, 32, 32, False)
             image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
             css = '''#xavatar-forward {
-            margin: 0px 8px;}'''
+            margin-right: 8px;
+            margin-top: 4px;}'''
             gtkgui_helpers.add_css_to_widget(image2, css)
             image2.set_name('xavatar-forward')
 
@@ -476,12 +482,16 @@ class Base(object):
             show_forward_av.add(avatar2_event_box)
 
             name_badge_role2 = Gtk.Grid()
+            css = '''#name_badge_role {
+            margin-bottom: 6px;}'''
+            gtkgui_helpers.add_css_to_widget(name_badge_role2, css)
+            name_badge_role2.set_name('name_badge_role')
 
             info_name2 = Gtk.Label(nickname)
             css = '''#info_name {
             color: #D32F2F;
             font-size: 12px;
-            margin: 2px;}'''
+            margin-right: 4px;}'''
             gtkgui_helpers.add_css_to_widget(info_name2, css)
             info_name2.set_name('info_name')
 
@@ -489,7 +499,7 @@ class Base(object):
             css = '''#info_badge {
             color: black;
             font-size: 10px;
-            margin: 2px;}'''
+            margin-right: 4px;}'''
             gtkgui_helpers.add_css_to_widget(info_badge2, css)
             info_badge2.set_name('info_badge')
 
@@ -561,7 +571,8 @@ class Base(object):
         Message_eventBox = Gtk.EventBox()
         simplegrid.attach(Message_eventBox, 0, 0, 3, 1)
         self.current_message_id += 1
-        Message_eventBox.connect('button-press-event', self.on_message_click, additional_data, self.current_message_id, simplegrid)
+        Message_eventBox.connect('button-press-event', self.on_message_click, additional_data,
+                                 self.current_message_id, simplegrid, timestamp, nickname, message)
         Message_eventBox.connect('enter-notify-event', self.on_enter_event)
         Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
@@ -611,6 +622,8 @@ class Base(object):
         IS_MSG = False
         if nickname:
             IS_MSG = True
+        else:
+            self.previous_message_from = None
 
         if 'outgoingtxt' in text_tags:
             if self.previous_message_from == 'me':
@@ -626,24 +639,15 @@ class Base(object):
 
 
         buffer_ = self.textview.tv.get_buffer()
-        if not iter_:
-            iter_ = buffer_.get_end_iter()
 
-        # TODO erase time and send it to printmessage
         # delete old "[time] name: "
+        # upd. and put [time] into message timestamp
         self.textview.plugin_modified = True
         start = buffer_.get_start_iter()
         end = buffer_.get_end_iter()
         timestamp = buffer_.get_text(start, end, True)
         buffer_.delete(start, end)
         timestamp = timestamp.split('[')[1].split(']')[0]
-        print(timestamp)
-        print(timestamp)
-        print(timestamp)
-        print(timestamp)
-        print(timestamp)
-        print(timestamp)
-
 
 
         if IS_MSG:
@@ -704,7 +708,7 @@ class Base(object):
         print('leave')
         return
 
-    def on_message_click(self, eb, event, data, id, widget):
+    def on_message_click(self, eb, event, data, id, widget, timestamp, nickname, message):
         for message_data in self.chosen_messages_data:
             if message_data[0] == id:
                 print('deactivate')
@@ -715,10 +719,15 @@ class Base(object):
                 background-color: #FFFFFF;}'''
                 gtkgui_helpers.add_css_to_widget(widget, css)
                 widget.set_name('messagegrid')
+
+                if len(self.chosen_messages_data) == 0:
+                    self.button_copy.hide()
+                    self.button_forward.hide()
+                    self.button_reply.hide()
                 return
 
         print('activate')
-        new_message_data = [id, data]
+        new_message_data = [id, data, timestamp, nickname, message]
         self.chosen_messages_data.append(new_message_data)
         print(self.chosen_messages_data)
         css = '''#messagegrid {
@@ -726,3 +735,58 @@ class Base(object):
         background-color: #FFEBEE;}'''
         gtkgui_helpers.add_css_to_widget(widget, css)
         widget.set_name('messagegrid')
+        self.button_copy.show()
+        self.button_forward.show()
+        self.button_forward.set_label('FORWARD '+str(len(self.chosen_messages_data)))
+        self.button_reply.show()
+
+    def create_buttons(self, chat_control):
+        # create /me button
+        actions_hbox = chat_control.xml.get_object('hbox')
+
+
+        self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
+        self.button_copy.set_tooltip_text(_('copy text from messages widgets (press ctrl+v to paste it)'))
+        id_ = self.button_copy.connect('clicked', self.on_copytext_clicked)
+        chat_control.handlers[id_] = self.button_copy
+
+
+        self.button_forward = Gtk.Button(label='FORWARD', stock=None, use_underline=False)
+        self.button_forward.set_tooltip_text(_('send printed messages for someone'))
+        id_ = self.button_forward.connect('clicked', self.on_forward_clicked)
+        chat_control.handlers[id_] = self.button_forward
+
+
+        self.button_reply = Gtk.Button(label='REPLY', stock=None, use_underline=False)
+        self.button_reply.set_tooltip_text(_('send printed messages for this user'))
+        id_ = self.button_reply.connect('clicked', self.on_reply_clicked)
+        chat_control.handlers[id_] = self.button_reply
+
+
+        actions_hbox.pack_start(self.button_copy, False, False, 0)
+        actions_hbox.pack_start(self.button_forward, False, False, 0)
+        actions_hbox.pack_start(self.button_reply, False, False, 0)
+
+        actions_hbox.reorder_child(self.button_copy, len(actions_hbox.get_children()) - 3)
+        actions_hbox.reorder_child(self.button_forward, len(actions_hbox.get_children()) - 2)
+        actions_hbox.reorder_child(self.button_reply, len(actions_hbox.get_children()) - 1)
+
+
+    def on_copytext_clicked(self, widget):
+        print('copy clicked!')
+        copied_text = ''
+        for i in self.chosen_messages_data:
+            try:
+                copied_text += (
+                    '['+i[2]+']' + i[3] + ': ' + i[4] + '\n'
+                )
+                # TODO add name, badge etc. to 'me' messages
+            finally:
+                copied_text+=''
+        print(copied_text)
+
+    def on_forward_clicked(self, widget):
+        print('forward clicked!')
+
+    def on_reply_clicked(self, widget):
+        print('reply clicked!')
