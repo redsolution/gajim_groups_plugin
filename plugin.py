@@ -76,9 +76,21 @@ class XabberGroupsPlugin(GajimPlugin):
             'print_real_text': (self.print_real_text, None),
         }
 
-
+    @log_calls('XabberGroupsPlugin')
     def _nec_message_outgoing(self, obj):
         return
+
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_for_rights(self, chat_control, to_jid, id=''):
+        print(to_jid)
+        print(chat_control.contact.name)
+        print(chat_control.contact)
+        print(chat_control.contact.jid)
+        stanza_send = nbxmpp.Iq(to=to_jid, typ='get')
+        stanza_send.setAttr('id', str(id))
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+        stanza_send.getTag('query').setAttr('id', str(id))
+        app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -96,10 +108,6 @@ class XabberGroupsPlugin(GajimPlugin):
             f.write(imgdata)
             f.close()
         return(realfilename)
-
-    @log_calls('XabberGroupsPlugin')
-    def send_ask_for_rights(self, account, jid):
-        return 'u have no rights, mazafaka'
 
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
@@ -121,10 +129,38 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
+        cr_right_query = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights')
         if cr_invite:
             self.invite_to_chatroom_recieved(obj)
         elif cr_message:
             self.xabber_message_recieved(obj)
+        elif cr_right_query:
+            self.rights_query_recieved(obj)
+
+    @log_calls('XabberGroupsPlugin')
+    def rights_query_recieved(self, obj):
+        myjid = obj.stanza.getAttr('to')
+        myjid = app.get_jid_without_resource(str(myjid))
+        fromjid = obj.jid
+        userid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('id').getData()
+        jid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('jid').getData()
+        badge = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('badge').getData()
+        nickname = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('nickname').getData()
+        av_id = ''
+        try:
+            av_id = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('metadata',
+                                                                                      namespace='urn:xmpp:avatar:metadata')
+            av_id = av_id.getTag('info').getAttr('id')
+        except:
+            av_id = 'unknown'
+        rights = {'jid': jid,
+                  'nickname': nickname,
+                  'id': userid,
+                  'av_id': av_id,
+                  'badge': badge
+            }
+
+
 
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):
@@ -279,11 +315,11 @@ class XabberGroupsPlugin(GajimPlugin):
     def connect_with_chat_control(self, chat_control):
         account = chat_control.contact.account.name
         jid = chat_control.contact.jid
-        if jid in allowjids:  # ask for rights if xgc if open chat control
-            self.send_ask_for_rights(chat_control.contact, jid)
+        #if jid in allowjids:  # ask for rights if xgc if open chat control
         if account not in self.controls and jid in allowjids:
             self.controls[account] = {}
         self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
+        self.send_ask_for_rights(chat_control, jid)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -292,20 +328,20 @@ class XabberGroupsPlugin(GajimPlugin):
         self.controls[account][jid].deinit_handlers()
         del self.controls[account][jid]
 
-    @log_calls('UrlImagePreviewPlugin')
+    @log_calls('XabberGroupsPlugin')
     def connect_with_history(self, history_window):
         if self.history_window_control:
             self.history_window_control.deinit_handlers()
         self.history_window_control = Base(
             self, history_window.history_textview)
 
-    @log_calls('UrlImagePreviewPlugin')
+    @log_calls('XabberGroupsPlugin')
     def disconnect_from_history(self, history_window):
         if self.history_window_control:
             self.history_window_control.deinit_handlers()
         self.history_window_control = None
 
-
+    @log_calls('XabberGroupsPlugin')
     def print_real_text(self, tv, real_text, text_tags, graphics,
                         iter_, additional_data):
         if tv.used_in_history_window and self.history_window_control:
@@ -337,9 +373,6 @@ class Base(object):
         self.current_message_id = -1
         self.chosen_messages_data = []
 
-        if chat_control:
-            self.create_buttons(chat_control)
-
         self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
         self.box.set_halign(Gtk.Align.FILL)
         self.box.set_hexpand(True)
@@ -353,6 +386,9 @@ class Base(object):
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
         # expand in textview doesnt work
         self.textview.tv.add(self.scrolled)
+
+        if chat_control:
+            self.create_buttons(chat_control)
 
     def resize(self, widget, r):
         self.scrolled.set_size_request(r.width, r.height)
@@ -493,7 +529,7 @@ class Base(object):
             gtkgui_helpers.add_css_to_widget(name_badge_role2, css)
             name_badge_role2.set_name('name_badge_role')
 
-            info_name2 = Gtk.Label(nickname)
+            info_name2 = Gtk.Label(forward['nickname'])
             css = '''#info_name {
             color: #D32F2F;
             font-size: 12px;
@@ -501,7 +537,7 @@ class Base(object):
             gtkgui_helpers.add_css_to_widget(info_name2, css)
             info_name2.set_name('info_name')
 
-            info_badge2 = Gtk.Label(badge)
+            info_badge2 = Gtk.Label(forward['badge'])
             css = '''#info_badge {
             color: black;
             font-size: 10px;
@@ -509,7 +545,7 @@ class Base(object):
             gtkgui_helpers.add_css_to_widget(info_badge2, css)
             info_badge2.set_name('info_badge')
 
-            info_role2 = Gtk.Label(role)
+            info_role2 = Gtk.Label(forward['role'])
             css = '''#info_role {
             color: white;
             font-size: 10px;
@@ -714,6 +750,7 @@ class Base(object):
         print('leave')
         return
 
+
     def on_message_click(self, eb, event, data, id, widget, timestamp, nickname, message):
         for message_data in self.chosen_messages_data:
             if message_data[0] == id:
@@ -725,11 +762,10 @@ class Base(object):
                 background-color: #FFFFFF;}'''
                 gtkgui_helpers.add_css_to_widget(widget, css)
                 widget.set_name('messagegrid')
-
                 if len(self.chosen_messages_data) == 0:
-                    self.button_copy.hide()
-                    self.button_forward.hide()
-                    self.button_reply.hide()
+                    self.show_othr_hide_xbtn()
+                else:
+                    self.show_xbtn_hide_othr()
                 return
 
         print('activate')
@@ -744,9 +780,13 @@ class Base(object):
         self.button_copy.show()
         self.button_forward.show()
         self.button_reply.show()
+        if len(self.chosen_messages_data) == 0:
+            self.show_othr_hide_xbtn()
+        else:
+            self.show_xbtn_hide_othr()
 
     def create_buttons(self, chat_control):
-        actions_hbox = chat_control.xml.get_object('hbox')
+        self.actions_hbox = chat_control.xml.get_object('hbox')
 
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
         self.button_copy.set_tooltip_text(_('copy text from messages widgets (press ctrl+v to paste it)'))
@@ -770,29 +810,29 @@ class Base(object):
         self.button_forward.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_reply.get_style_context().add_class('chatcontrol-actionbar-button')
 
-        actions_hbox.pack_start(self.button_copy, False, False, 0)
-        actions_hbox.pack_start(self.button_forward, False, False, 0)
-        actions_hbox.pack_start(self.button_reply, False, False, 0)
+        '''
+        buttongrid = Gtk.Grid()
+        buttongrid.attach(self.button_copy, 0, 0, 1, 1)
+        buttongrid.attach(self.button_forward, 1, 0, 1, 1)
+        buttongrid.attach(self.button_reply, 2, 0, 1, 1)
+        self.actions_hbox.add(buttongrid)
+        buttongrid.show()
+        '''
 
-        actions_hbox.reorder_child(self.button_copy, len(actions_hbox.get_children()) - 4)
-        actions_hbox.reorder_child(self.button_forward, len(actions_hbox.get_children()) - 3)
-        actions_hbox.reorder_child(self.button_reply, len(actions_hbox.get_children()) - 2)
+        self.actions_hbox.pack_start(self.button_copy, False, False, 0)
+        self.actions_hbox.pack_start(self.button_forward, False, False, 0)
+        self.actions_hbox.pack_start(self.button_reply, False, False, 0)
 
-        self.button_copy.show()
-        self.button_forward.show()
-        self.button_reply.show()
-        self.button_copy.hide()
-        self.button_forward.hide()
-        self.button_reply.hide()
+        self.actions_hbox.reorder_child(self.button_copy, len(self.actions_hbox.get_children()) - 4)
+        self.actions_hbox.reorder_child(self.button_forward, len(self.actions_hbox.get_children()) - 3)
+        self.actions_hbox.reorder_child(self.button_reply, len(self.actions_hbox.get_children()) - 2)
+
+        self.show_othr_hide_xbtn()
 
 
     def remove_message_selection(self):
         self.chosen_messages_data = []
-
-        self.button_copy.hide()
-        self.button_forward.hide()
-        self.button_reply.hide()
-
+        self.show_othr_hide_xbtn()
         messages = [m for m in self.box.get_children()]
         for widget in messages:
             css = '''#messagegrid {
@@ -801,6 +841,15 @@ class Base(object):
             gtkgui_helpers.add_css_to_widget(widget, css)
             widget.set_name('messagegrid')
 
+    def show_xbtn_hide_othr(self):
+        self.button_copy.show()
+        self.button_forward.show()
+        self.button_reply.show()
+
+    def show_othr_hide_xbtn(self):
+        self.button_copy.hide()
+        self.button_forward.hide()
+        self.button_reply.hide()
 
 
     def on_copytext_clicked(self, widget):
