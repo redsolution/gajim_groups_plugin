@@ -67,6 +67,7 @@ class XabberGroupsPlugin(GajimPlugin):
         self.events_handlers = {
             'decrypted-message-received': (ged.PREGUI1, self._nec_decrypted_message_received),
             'raw-iq-received': (ged.CORE, self._nec_iq_received),
+            # TODO _nec_message_outgoing
         }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
@@ -120,7 +121,7 @@ class XabberGroupsPlugin(GajimPlugin):
             self.xabber_message_recieved(obj)
 
     @log_calls('XabberGroupsPlugin')
-    def invite_to_chatroom_recieved(self, obj):  
+    def invite_to_chatroom_recieved(self, obj):
         myjid = obj.stanza.getAttr('to')
         myjid = app.get_jid_without_resource(str(myjid))
         jid = obj.stanza.getTag('invite', namespace=XABBER_GC).getAttr('jid')
@@ -350,12 +351,10 @@ class Base(object):
         self.scrolled.set_size_request(r.width, r.height)
         messages = [m for m in self.box.get_children()]
         for i in messages:
-            j = i.get_children()
-            j[2].set_size_request(r.width - (64+95), -1)
-
-            # in case of only grid
-            # j = i.get_children()
-            # j[1].set_size_request(r.width - (64+95), -1)
+            try:
+                j = i.get_children()
+                j[2].set_size_request(r.width - (64+95), -1)
+            except: print('server info')
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -366,7 +365,7 @@ class Base(object):
             del self.handlers[i]
 
 
-    def print_message(self, iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data):
+    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp):
 
         IS_FORWARD = False
         forward = None
@@ -425,20 +424,39 @@ class Base(object):
 
         if not SAME_FROM:
             # SHOW2
-            name_badge_role = Gtk.Label()
-            name_badge_role.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
-                                       '<span font_desc=\'12px\' color=\'black\'>%(badge)s</span> '
-                                       '<span font_desc=\'10px\' color=\'grey\'><small>%(role)s</small></span>'
-                                       '' % {'name': nickname,
-                                             'badge': badge,
-                                             'role': role})
-            name_badge_role.set_line_wrap(True)
-            name_badge_role.set_justify(Gtk.Justification.LEFT)
-            name_badge_role.set_halign(Gtk.Align.START)
-            css = '''#name_badge_role {
-            margin-bottom: 6px;}'''
-            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
-            name_badge_role.set_name('name_badge_role')
+            name_badge_role = Gtk.Grid()
+
+            info_name = Gtk.Label(nickname)
+            css = '''#info_name {
+            color: #D32F2F;
+            font-size: 12px;
+            margin: 2px;}'''
+            gtkgui_helpers.add_css_to_widget(info_name, css)
+            info_name.set_name('info_name')
+
+            info_badge = Gtk.Label(badge)
+            css = '''#info_badge {
+            color: black;
+            font-size: 10px;
+            margin: 2px;}'''
+            gtkgui_helpers.add_css_to_widget(info_badge, css)
+            info_badge.set_name('info_badge')
+
+            info_role = Gtk.Label(role)
+            css = '''#info_role {
+            color: white;
+            font-size: 10px;
+            background-color: #CCC;
+            border-radius: 3px;
+            padding: 2px 3px 0px 3px;
+            margin: 2px;}'''
+            gtkgui_helpers.add_css_to_widget(info_role, css)
+            info_role.set_name('info_role')
+
+            name_badge_role.attach(info_name, 0, 0, 1, 1)
+            name_badge_role.attach(info_badge, 1, 0, 1, 1)
+            name_badge_role.attach(info_role, 2, 0, 1, 1)
+
         if IS_FORWARD:
             pixbuf2 = GdkPixbuf.Pixbuf.new_from_file_at_scale(file2, 32, 32, False)
             image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
@@ -457,20 +475,38 @@ class Base(object):
             show_forward_av = Gtk.Grid()
             show_forward_av.add(avatar2_event_box)
 
-            name_badge_role2 = Gtk.Label()
-            name_badge_role2.set_markup('<span font_desc=\'12px\' color=\'#D32F2F\'>%(name)s</span> '
-                                        '<span font_desc=\'12px\' color=\'black\'>%(badge)s</span> '
-                                        '<span font_desc=\'10px\' color=\'grey\'><small>%(role)s</small></span>'
-                                        '' % {'name': forward['nickname'],
-                                              'badge': forward['badge'],
-                                              'role': forward['role']})
-            name_badge_role2.set_line_wrap(True)
-            name_badge_role2.set_justify(Gtk.Justification.LEFT)
-            name_badge_role2.set_halign(Gtk.Align.START)
-            css = '''#name_badge_role {
-            margin-bottom: 6px;}'''
-            gtkgui_helpers.add_css_to_widget(name_badge_role2, css)
-            name_badge_role2.set_name('name_badge_role')
+            name_badge_role2 = Gtk.Grid()
+
+            info_name2 = Gtk.Label(nickname)
+            css = '''#info_name {
+            color: #D32F2F;
+            font-size: 12px;
+            margin: 2px;}'''
+            gtkgui_helpers.add_css_to_widget(info_name2, css)
+            info_name2.set_name('info_name')
+
+            info_badge2 = Gtk.Label(badge)
+            css = '''#info_badge {
+            color: black;
+            font-size: 10px;
+            margin: 2px;}'''
+            gtkgui_helpers.add_css_to_widget(info_badge2, css)
+            info_badge2.set_name('info_badge')
+
+            info_role2 = Gtk.Label(role)
+            css = '''#info_role {
+            color: white;
+            font-size: 10px;
+            background-color: #CCC;
+            border-radius: 3px;
+            padding: 2px 3px 0px 3px;
+            margin: 2px;}'''
+            gtkgui_helpers.add_css_to_widget(info_role2, css)
+            info_role2.set_name('info_role')
+
+            name_badge_role2.attach(info_name2, 0, 0, 1, 1)
+            name_badge_role2.attach(info_badge2, 1, 0, 1, 1)
+            name_badge_role2.attach(info_role2, 2, 0, 1, 1)
 
             messagetext = Gtk.Label()
             css = '''#message_font_size {
@@ -508,10 +544,11 @@ class Base(object):
         show2.pack_start(messagecontainer, True, True, 0)
 
         # SHOW3
-        timestamp_label = Gtk.Label()
-        timestamp_label.set_markup('<span font_desc=\'12px\' color=\'#666\'>14:44:42</span>')
+        timestamp_label = Gtk.Label(timestamp)
         css = '''#xtimestamp {
-        margin: 0px 16px;}'''
+        margin: 0px 16px;
+        font-size: 12px;
+        color: #666}'''
         gtkgui_helpers.add_css_to_widget(timestamp_label, css)
         timestamp_label.set_name('xtimestamp')
         show3.add(timestamp_label)
@@ -531,13 +568,25 @@ class Base(object):
         self.box.pack_start(simplegrid, False, False, 0)
         simplegrid.show_all()
 
-
+    def print_server_info(self, real_text):
+        show = Gtk.Label(real_text)
+        css = '''#server_info {
+        padding: 8px 0px;
+        font-size: 12px;
+        color: #9E9E9E;
+        font-style: italic;}'''
+        gtkgui_helpers.add_css_to_widget(show, css)
+        show.set_name('server_info')
+        self.box.pack_start(show, False, False, 0)
+        show.show_all()
 
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         nickname = None
         user_id = None
         print(additional_data)
+        print(graphics)
+        print(type(graphics))
 
         if 'incomingtxt' in text_tags:
             if additional_data != {}:
@@ -580,19 +629,27 @@ class Base(object):
         if not iter_:
             iter_ = buffer_.get_end_iter()
 
-
+        # TODO erase time and send it to printmessage
         # delete old "[time] name: "
         self.textview.plugin_modified = True
-        lineindex = buffer_.get_line_count() - 1
-        prevline = buffer_.get_iter_at_line(lineindex)
-        buffer_.delete(prevline, iter_)
+        start = buffer_.get_start_iter()
+        end = buffer_.get_end_iter()
+        timestamp = buffer_.get_text(start, end, True)
+        buffer_.delete(start, end)
+        timestamp = timestamp.split('[')[1].split(']')[0]
+        print(timestamp)
+        print(timestamp)
+        print(timestamp)
+        print(timestamp)
+        print(timestamp)
+        print(timestamp)
 
 
 
         if IS_MSG:
-            self.print_message(iter_, SAME_FROM, buffer_, nickname, message, role, badge, additional_data)
-        #else:
-            #self.print_server_info(iter_, buffer_, real_text)
+            self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
+        else:
+            self.print_server_info(real_text)
 
 
 
@@ -650,7 +707,7 @@ class Base(object):
     def on_message_click(self, eb, event, data, id, widget):
         for message_data in self.chosen_messages_data:
             if message_data[0] == id:
-                print('activate')
+                print('deactivate')
                 self.chosen_messages_data.remove(message_data)
                 print(self.chosen_messages_data)
                 css = '''#messagegrid {
@@ -660,12 +717,12 @@ class Base(object):
                 widget.set_name('messagegrid')
                 return
 
-        print('deactivate')
+        print('activate')
         new_message_data = [id, data]
         self.chosen_messages_data.append(new_message_data)
         print(self.chosen_messages_data)
         css = '''#messagegrid {
         padding: 10px 0px;
-        background-color: #FFCCCC;}'''
+        background-color: #FFEBEE;}'''
         gtkgui_helpers.add_css_to_widget(widget, css)
         widget.set_name('messagegrid')
