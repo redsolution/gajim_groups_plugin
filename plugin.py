@@ -374,9 +374,7 @@ class Base(object):
         self.chosen_messages_data = []
 
         self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
-        self.box.set_size_request(self.textview.tv.get_allocated_width(),
-                                  self.textview.tv.get_allocated_height())
-
+        #self.box.set_size_request(self.textview.tv.get_allocated_width(), self.textview.tv.get_allocated_height())
         self.scrolled = Gtk.ScrolledWindow()
         self.scrolled.add(self.box)
 
@@ -397,6 +395,8 @@ class Base(object):
                 j = i.get_children()
                 j[2].set_size_request(r.width - (64+95), -1)
             except: pass
+
+        print(self.actions_hbox.get_children())
 
     def do_resize(self, messagebox):
         w = self.textview.tv.get_allocated_width()
@@ -449,8 +449,7 @@ class Base(object):
         simplegrid.attach(show2, 1, 0, 1, 1)
         simplegrid.attach(show3, 2, 0, 1, 1)
         css = '''#messagegrid {
-        padding: 10px 0px;
-        border-radius: 50%;}'''
+        padding: 10px 0px;}'''
         gtkgui_helpers.add_css_to_widget(simplegrid, css)
         simplegrid.set_name('messagegrid')
         #self.box.add(simplegrid)
@@ -809,7 +808,22 @@ class Base(object):
         box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.16), 0 2px 10px 0 rgba(0, 0, 0, 0.12);
         font-size: 12px;
         font-weight: bold;
-        }'''
+        }
+        #XCbutton {
+        margin: 0 5px;
+        padding: 0 10px;
+        color: #D32F2F;
+        background-color: #FFFFFF;
+        background: #FFFFFF;
+        border-radius: 2px;
+        font-size: 12px;
+        font-weight: bold;
+        }
+        #XCbutton:hover{
+        background-color: #E0E0E0;
+        background: #E0E0E0;
+        }
+        '''
 
 
         # buttons configs
@@ -834,34 +848,48 @@ class Base(object):
         gtkgui_helpers.add_css_to_widget(self.button_reply, css)
         self.button_reply.set_name('Xbutton')
 
+        self.button_cancel = Gtk.Button(label='CANCEL', stock=None, use_underline=False)
+        self.button_cancel.set_tooltip_text(_('resend printed messages for this user'))
+        id_ = self.button_cancel.connect('clicked', self.remove_message_selection)
+        chat_control.handlers[id_] = self.button_cancel
+        gtkgui_helpers.add_css_to_widget(self.button_cancel, css)
+        self.button_cancel.set_name('XCbutton')
+
         self.button_copy.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_forward.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_reply.get_style_context().add_class('chatcontrol-actionbar-button')
+        self.button_cancel.get_style_context().add_class('chatcontrol-actionbar-button')
 
-        '''
-        buttongrid = Gtk.Grid()
-        buttongrid.attach(self.button_copy, 0, 0, 1, 1)
-        buttongrid.attach(self.button_forward, 1, 0, 1, 1)
-        buttongrid.attach(self.button_reply, 2, 0, 1, 1)
-        self.actions_hbox.add(buttongrid)
-        buttongrid.show()
-        '''
+        self.buttongrid = Gtk.Grid()
+        self.buttongrid.attach(self.button_copy, 0, 0, 1, 1)
+        self.buttongrid.attach(self.button_forward, 1, 0, 1, 1)
+        self.buttongrid.attach(self.button_reply, 2, 0, 1, 1)
+        self.buttongrid.attach(self.button_cancel, 4, 0, 1, 1)
+        self.actions_hbox.add(self.buttongrid)
+        self.buttongrid.show()
+        self.actions_hbox.pack_start(self.buttongrid, False, False, 0)
+        self.actions_hbox.reorder_child(self.buttongrid, 0)
+
         self.button_copy.set_size_request(95, 35)
         self.button_forward.set_size_request(95, 35)
         self.button_reply.set_size_request(95, 35)
+        self.button_cancel.set_size_request(95, 35)
 
-        self.actions_hbox.pack_start(self.button_copy, False, False, 0)
-        self.actions_hbox.pack_start(self.button_forward, False, False, 0)
-        self.actions_hbox.pack_start(self.button_reply, False, False, 0)
+        #self.actions_hbox.pack_start(self.button_copy, False, False, 0)
+        #self.actions_hbox.pack_start(self.button_forward, False, False, 0)
+        #self.actions_hbox.pack_start(self.button_reply, False, False, 0)
 
-        self.actions_hbox.reorder_child(self.button_copy, len(self.actions_hbox.get_children()) - 4)
-        self.actions_hbox.reorder_child(self.button_forward, len(self.actions_hbox.get_children()) - 3)
-        self.actions_hbox.reorder_child(self.button_reply, len(self.actions_hbox.get_children()) - 2)
+        #self.actions_hbox.reorder_child(self.button_copy, len(self.actions_hbox.get_children()) - 4)
+        #self.actions_hbox.reorder_child(self.button_forward, len(self.actions_hbox.get_children()) - 3)
+        #self.actions_hbox.reorder_child(self.button_reply, len(self.actions_hbox.get_children()) - 2)
 
+        # info about acts which was visible before tap message
+        self.was_wisible_acts = []
         self.show_othr_hide_xbtn()
 
 
-    def remove_message_selection(self):
+    def remove_message_selection(self, w=None):
+        print('remove_message_selection')
         self.chosen_messages_data = []
         self.show_othr_hide_xbtn()
         messages = [m for m in self.box.get_children()]
@@ -873,14 +901,17 @@ class Base(object):
             widget.set_name('messagegrid')
 
     def show_xbtn_hide_othr(self):
-        self.button_copy.show()
-        self.button_forward.show()
-        self.button_reply.show()
+        actions = [m for m in self.actions_hbox.get_children()]
+        for act in actions:
+            if act.get_visible():
+                self.was_wisible_acts.append(act)
+            act.set_visible(False)
+        self.buttongrid.show()
 
     def show_othr_hide_xbtn(self):
-        self.button_copy.hide()
-        self.button_forward.hide()
-        self.button_reply.hide()
+        for act in self.was_wisible_acts:
+            act.set_visible(True)
+        self.buttongrid.hide()
 
 
     def on_copytext_clicked(self, widget):
