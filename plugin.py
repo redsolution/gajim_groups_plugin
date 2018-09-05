@@ -65,8 +65,8 @@ class XabberGroupsPlugin(GajimPlugin):
         self.history_window_control = None
 
         self.events_handlers = {
-            'decrypted-message-received': (ged.PREGUI1, self._nec_decrypted_message_received),
-            'raw-iq-received': (ged.CORE, self._nec_iq_received),
+            'decrypted-message-received': (ged.OUT_PRECORE, self._nec_decrypted_message_received),
+            'raw-iq-received': (ged.OUT_PRECORE, self._nec_iq_received),
             'message-outgoing': (ged.OUT_PRECORE, self._nec_message_outgoing)
             # TODO _nec_message_outgoing
         }
@@ -374,9 +374,8 @@ class Base(object):
         self.chosen_messages_data = []
 
         self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
-        self.box.set_halign(Gtk.Align.FILL)
-        self.box.set_hexpand(True)
-        self.box.set_vexpand(False)
+        self.box.set_size_request(self.textview.tv.get_allocated_width(),
+                                  self.textview.tv.get_allocated_height())
 
         self.scrolled = Gtk.ScrolledWindow()
         self.scrolled.add(self.box)
@@ -397,7 +396,12 @@ class Base(object):
             try:
                 j = i.get_children()
                 j[2].set_size_request(r.width - (64+95), -1)
-            except: print('server info')
+            except: pass
+
+    def do_resize(self, messagebox):
+        w = self.textview.tv.get_allocated_width()
+        messagebox.set_size_request(w, -1)
+        messagebox.get_children()[2].set_size_request(w - (64+95), -1)
 
     def deinit_handlers(self):
         # remove all register handlers on wigets, created by self.xml
@@ -445,7 +449,8 @@ class Base(object):
         simplegrid.attach(show2, 1, 0, 1, 1)
         simplegrid.attach(show3, 2, 0, 1, 1)
         css = '''#messagegrid {
-        padding: 10px 0px;}'''
+        padding: 10px 0px;
+        border-radius: 50%;}'''
         gtkgui_helpers.add_css_to_widget(simplegrid, css)
         simplegrid.set_name('messagegrid')
         #self.box.add(simplegrid)
@@ -454,7 +459,7 @@ class Base(object):
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
         image = Gtk.Image.new_from_pixbuf(pixbuf)
         css = '''#xavatar {
-        margin: 4px 16px 0px 16px; }'''
+        margin: 4px 16px 0px 16px;}'''
         gtkgui_helpers.add_css_to_widget(image, css)
         image.set_name('xavatar')
         avatar_event_box = Gtk.EventBox()
@@ -609,7 +614,6 @@ class Base(object):
         show.set_size_request(64, -1)
         show3.set_size_request(95, -1)
 
-        # EventBox kostyl
         Message_eventBox = Gtk.EventBox()
         simplegrid.attach(Message_eventBox, 0, 0, 3, 1)
         self.current_message_id += 1
@@ -619,6 +623,8 @@ class Base(object):
         Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
         self.box.pack_start(simplegrid, False, False, 0)
+        # set size of message by parent width after creating
+        self.do_resize(simplegrid)
         simplegrid.show_all()
 
     def print_server_info(self, real_text):
@@ -752,6 +758,8 @@ class Base(object):
 
 
     def on_message_click(self, eb, event, data, id, widget, timestamp, nickname, message):
+
+        # search message in chosen_messages_data by id
         for message_data in self.chosen_messages_data:
             if message_data[0] == id:
                 print('deactivate')
@@ -774,7 +782,7 @@ class Base(object):
         print(self.chosen_messages_data)
         css = '''#messagegrid {
         padding: 10px 0px;
-        background-color: #FFEBEE;}'''
+        background-color: #FFCCCC;}'''
         gtkgui_helpers.add_css_to_widget(widget, css)
         widget.set_name('messagegrid')
         self.button_copy.show()
@@ -788,23 +796,43 @@ class Base(object):
     def create_buttons(self, chat_control):
         self.actions_hbox = chat_control.xml.get_object('hbox')
 
+        #childs = self.actions_hbox.get_children()
+
+
+        css = '''#Xbutton {
+        margin: 0 5px;
+        padding: 0 10px;
+        color: #FFFFFF;
+        background-color: #D32F2F;
+        background: #D32F2F;
+        border-radius: 2px;
+        box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.16), 0 2px 10px 0 rgba(0, 0, 0, 0.12);
+        font-size: 12px;
+        font-weight: bold;
+        }'''
+
+
+        # buttons configs
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
         self.button_copy.set_tooltip_text(_('copy text from messages widgets (press ctrl+v to paste it)'))
         id_ = self.button_copy.connect('clicked', self.on_copytext_clicked)
         chat_control.handlers[id_] = self.button_copy
-
+        gtkgui_helpers.add_css_to_widget(self.button_copy, css)
+        self.button_copy.set_name('Xbutton')
 
         self.button_forward = Gtk.Button(label='FORWARD', stock=None, use_underline=False)
-        self.button_forward.set_tooltip_text(_('send printed messages for someone'))
+        self.button_forward.set_tooltip_text(_('resend printed messages for someone'))
         id_ = self.button_forward.connect('clicked', self.on_forward_clicked)
         chat_control.handlers[id_] = self.button_forward
-
+        gtkgui_helpers.add_css_to_widget(self.button_forward, css)
+        self.button_forward.set_name('Xbutton')
 
         self.button_reply = Gtk.Button(label='REPLY', stock=None, use_underline=False)
-        self.button_reply.set_tooltip_text(_('send printed messages for this user'))
+        self.button_reply.set_tooltip_text(_('resend printed messages for this user'))
         id_ = self.button_reply.connect('clicked', self.on_reply_clicked)
         chat_control.handlers[id_] = self.button_reply
-
+        gtkgui_helpers.add_css_to_widget(self.button_reply, css)
+        self.button_reply.set_name('Xbutton')
 
         self.button_copy.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_forward.get_style_context().add_class('chatcontrol-actionbar-button')
@@ -818,6 +846,9 @@ class Base(object):
         self.actions_hbox.add(buttongrid)
         buttongrid.show()
         '''
+        self.button_copy.set_size_request(95, 35)
+        self.button_forward.set_size_request(95, 35)
+        self.button_reply.set_size_request(95, 35)
 
         self.actions_hbox.pack_start(self.button_copy, False, False, 0)
         self.actions_hbox.pack_start(self.button_forward, False, False, 0)
