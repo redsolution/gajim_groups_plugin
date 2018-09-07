@@ -62,22 +62,52 @@ class XabberGroupsPlugin(GajimPlugin):
         self.description = _('Adds support Xabber Groups.')
         self.config_dialog = None
         self.controls = {}
+        self.userdata = {}
         self.history_window_control = None
 
         self.events_handlers = {
             'decrypted-message-received': (ged.OUT_PRECORE, self._nec_decrypted_message_received),
             'raw-iq-received': (ged.OUT_PRECORE, self._nec_iq_received),
-            'message-outgoing': (ged.OUT_PRECORE, self._nec_message_outgoing)
+            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing)
             # TODO _nec_message_outgoing
         }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
                                        self.disconnect_from_chat_control),
-            'print_real_text': (self.print_real_text, None),
         }
 
     @log_calls('XabberGroupsPlugin')
     def _nec_message_outgoing(self, obj):
+        to_jid = obj.jid
+        from_jid = obj.account
+        from_jid = app.get_jid_from_account(from_jid)
+        print(to_jid)
+        print(from_jid)
+        if to_jid in allowjids:
+            add_data = self.userdata[to_jid][from_jid]
+            obj.additional_data.update({'jid': add_data['jid'],
+                                        'nickname': add_data['jid'],
+                                        'id': add_data['id'],
+                                        'av_id': add_data['av_id'],
+                                        'badge': add_data['badge'],
+                                        'role': '',
+                                        'message': obj.message
+                                        })
+        account = None
+        accounts = app.contacts.get_accounts()
+        myjid = from_jid
+        for acc in accounts:
+            realjid = app.get_jid_from_account(acc)
+            realjid = app.get_jid_without_resource(str(realjid))
+            if myjid == realjid:
+                account = acc
+
+        for jid in self.controls[account]:
+            if jid not in allowjids:
+                continue
+            self.controls[account][jid].print_real_text(obj)
+
+        print('message sent\n'*50)
         return
 
     @log_calls('XabberGroupsPlugin')
@@ -112,13 +142,36 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
         try:
-            # check is iq from xabber gc
+            # check is iq = avatardata from xabber gc
             item = obj.stanza.getTag('pubsub').getTag('items').getTag('item')
             base64avatar = item.getTag('data', namespace='urn:xmpp:avatar:data').getData()
             id = item.getAttr('id')
             avatar_loc = self.base64_to_image(base64avatar, id)
             print(avatar_loc)
         except:
+            # check is iq = groupchat userdata from xabber gc
+            item = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
+            id = item.getTag('id').getData()
+            jid = item.getTag('jid').getData()
+            badge = item.getTag('badge').getData()
+            nickname = item.getTag('nickname').getData()
+            av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getData()
+            userdata = {'id': id,
+                        'jid': jid,
+                        'badge': badge,
+                        'nickname': nickname,
+                        'av_id': av_id}
+            print('data\n'*10)
+            room = obj.stanza.getAttr('from')
+            myjid = obj.stanza.getAttr('to')
+            myjid = app.get_jid_without_resource(str(myjid))
+
+            print(room, myjid)
+            self.userdata[room] = {}
+            self.userdata[room][myjid] = userdata
+            print(self.userdata[room][myjid])
+
+        finally:
             return
 
 
@@ -161,7 +214,6 @@ class XabberGroupsPlugin(GajimPlugin):
             }
 
 
-
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):
         myjid = obj.stanza.getAttr('to')
@@ -198,6 +250,7 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
+        print('messageeeeee\n'*50)
         room = obj.jid
         addallowjid(room)
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
@@ -284,6 +337,7 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'badge': badge,
                                     'forward': forward_m
                                     })
+        print(obj.additional_data)
         account = None
         accounts = app.contacts.get_accounts()
         myjid = obj.stanza.getAttr('to')
@@ -294,6 +348,11 @@ class XabberGroupsPlugin(GajimPlugin):
                 account = acc
         if id != 'unknown' and account:
             self.send_call_single_avatar(account, room, userid, id)
+
+        for jid in self.controls[account]:
+            if jid not in allowjids:
+                continue
+            self.controls[account][jid].print_real_text(obj)
 
     @log_calls('XabberGroupsPlugin')
     def send_call_single_avatar(self, account, room_jid, u_id, av_id):
@@ -328,40 +387,17 @@ class XabberGroupsPlugin(GajimPlugin):
         self.controls[account][jid].deinit_handlers()
         del self.controls[account][jid]
 
-    @log_calls('XabberGroupsPlugin')
-    def connect_with_history(self, history_window):
-        if self.history_window_control:
-            self.history_window_control.deinit_handlers()
-        self.history_window_control = Base(
-            self, history_window.history_textview)
-
-    @log_calls('XabberGroupsPlugin')
-    def disconnect_from_history(self, history_window):
-        if self.history_window_control:
-            self.history_window_control.deinit_handlers()
-        self.history_window_control = None
-
-    @log_calls('XabberGroupsPlugin')
-    def print_real_text(self, tv, real_text, text_tags, graphics,
-                        iter_, additional_data):
-        if tv.used_in_history_window and self.history_window_control:
-            self.history_window_control.print_real_text(
-                real_text, text_tags, graphics, iter_, additional_data)
-
-        account = tv.account
-        for jid in self.controls[account]:
-            if self.controls[account][jid].textview != tv or jid not in allowjids:
-                continue
-            self.controls[account][jid].print_real_text(
-                real_text, text_tags, graphics, iter_, additional_data)
-            return
-
-
 
 class Base(object):
 
     def __init__(self, plugin, textview, chat_control=None):
         # recieve textview to work with
+        print('yoyoyoy\n'*50)
+        myjid = app.get_jid_from_account(chat_control.contact.account.name)
+        jid = chat_control.contact.jid
+        print(myjid)
+        print(jid)
+        #self.in_room_userdata = plugin.userdata[jid][myjid]
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
@@ -638,52 +674,28 @@ class Base(object):
         self.box.pack_start(show, False, False, 0)
         show.show_all()
 
-    def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
+    def print_real_text(self, obj):
 
+        additional_data = obj.additional_data
         nickname = None
         user_id = None
         print(additional_data)
-        print(graphics)
-        print(type(graphics))
-
-        if 'incomingtxt' in text_tags:
-            if additional_data != {}:
-                writer_jid = additional_data['jid']
-                nickname = additional_data['nickname']
-                message = additional_data['message']
-                avatar_id = additional_data['av_id']
-                user_id = additional_data['id']
-                role = additional_data['role']
-                badge = additional_data['badge']
-            else:
-                writer_jid = 'room'
-                message = real_text
-
-        if 'outgoingtxt' in text_tags:
-            nickname = 'me'
-            message = real_text
-            role = ""
-            badge = ""
 
         SAME_FROM = False
         IS_MSG = False
-        if nickname:
+        if additional_data != {}:
             IS_MSG = True
+            if self.previous_message_from == additional_data['id']:
+                SAME_FROM = True
+            self.previous_message_from = additional_data['id']
+
         else:
             self.previous_message_from = None
 
-        if 'outgoingtxt' in text_tags:
-            if self.previous_message_from == 'me':
-                SAME_FROM = True
-            else:
-                self.previous_message_from = 'me'
-        if 'incomingtxt' in text_tags:
-            if self.previous_message_from == user_id:
-                SAME_FROM = True
-            else:
-                self.previous_message_from = user_id
-
-
+        nickname = additional_data['nickname']
+        message = additional_data['message']
+        role = additional_data['role']
+        badge = additional_data['badge']
 
         buffer_ = self.textview.tv.get_buffer()
 
@@ -694,13 +706,13 @@ class Base(object):
         end = buffer_.get_end_iter()
         timestamp = buffer_.get_text(start, end, True)
         buffer_.delete(start, end)
-        timestamp = timestamp.split('[')[1].split(']')[0]
-
+        #timestamp = timestamp.split('[')[1].split(']')[0]
+        timestamp = '[time]'
 
         if IS_MSG:
             self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
         else:
-            self.print_server_info(real_text)
+            self.print_server_info(message)
 
 
 
@@ -761,9 +773,7 @@ class Base(object):
         # search message in chosen_messages_data by id
         for message_data in self.chosen_messages_data:
             if message_data[0] == id:
-                print('deactivate')
                 self.chosen_messages_data.remove(message_data)
-                print(self.chosen_messages_data)
                 css = '''#messagegrid {
                 padding: 10px 0px;
                 background-color: #FFFFFF;}'''
@@ -775,10 +785,8 @@ class Base(object):
                     self.show_xbtn_hide_othr()
                 return
 
-        print('activate')
         new_message_data = [id, data, timestamp, nickname, message]
         self.chosen_messages_data.append(new_message_data)
-        print(self.chosen_messages_data)
         css = '''#messagegrid {
         padding: 10px 0px;
         background-color: #FFCCCC;}'''
@@ -799,8 +807,8 @@ class Base(object):
 
 
         css = '''#Xbutton {
-        margin: 0 5px;
-        padding: 0 10px;
+        margin: 0px 5px;
+        padding: 0px 10px;
         color: #FFFFFF;
         background-color: #D32F2F;
         background: #D32F2F;
@@ -809,9 +817,13 @@ class Base(object):
         font-size: 12px;
         font-weight: bold;
         }
+        #Xbutton:hover {
+        box-shadow: 0 5px 11px 0 rgba(0, 0, 0, 0.18), 0 4px 15px 0 rgba(0, 0, 0, 0.15);
+        }
+        
         #XCbutton {
-        margin: 0 5px;
-        padding: 0 10px;
+        margin: 0px 5px;
+        padding: 0px 10px;
         color: #D32F2F;
         background-color: #FFFFFF;
         background: #FFFFFF;
@@ -819,7 +831,7 @@ class Base(object):
         font-size: 12px;
         font-weight: bold;
         }
-        #XCbutton:hover{
+        #XCbutton:hover {
         background-color: #E0E0E0;
         background: #E0E0E0;
         }
@@ -864,10 +876,10 @@ class Base(object):
         self.buttongrid.attach(self.button_copy, 0, 0, 1, 1)
         self.buttongrid.attach(self.button_forward, 1, 0, 1, 1)
         self.buttongrid.attach(self.button_reply, 2, 0, 1, 1)
-        self.buttongrid.attach(self.button_cancel, 4, 0, 1, 1)
+        self.buttongrid.attach(self.button_cancel, 3, 0, 1, 1)
         self.actions_hbox.add(self.buttongrid)
         self.buttongrid.show()
-        self.actions_hbox.pack_start(self.buttongrid, False, False, 0)
+        self.actions_hbox.pack_start(self.buttongrid, True, True, 0)
         self.actions_hbox.reorder_child(self.buttongrid, 0)
 
         self.button_copy.set_size_request(95, 35)
@@ -889,7 +901,6 @@ class Base(object):
 
 
     def remove_message_selection(self, w=None):
-        print('remove_message_selection')
         self.chosen_messages_data = []
         self.show_othr_hide_xbtn()
         messages = [m for m in self.box.get_children()]
@@ -901,6 +912,13 @@ class Base(object):
             widget.set_name('messagegrid')
 
     def show_xbtn_hide_othr(self):
+        # TODO ??? make height of buttons block = 100px ???
+        css = '''#message-actions-panel {
+        #height: 100px;
+        #padding: 30px 10px;
+        }'''
+
+
         actions = [m for m in self.actions_hbox.get_children()]
         for act in actions:
             if act.get_visible():
