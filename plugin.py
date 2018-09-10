@@ -16,6 +16,7 @@ from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
 import base64, os
+import datetime
 
 # namespaces & logger
 log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
@@ -91,7 +92,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'av_id': add_data['av_id'],
                                         'badge': add_data['badge'],
                                         'role': '',
-                                        'message': obj.message
+                                        'message': obj.message,
+                                        'ts': datetime.datetime.utcnow().isoformat()
                                         })
         account = None
         accounts = app.contacts.get_accounts()
@@ -320,12 +322,13 @@ class XabberGroupsPlugin(GajimPlugin):
                 fbadge = badge
 
             forward_m = {'jid': fjid,
-                        'nickname': fname,
-                        'message': fmessage,
-                        'id': fuserid,
-                        'av_id': fid,
-                        'role': frole,
-                        'badge': fbadge
+                         'nickname': fname,
+                         'message': fmessage,
+                         'id': fuserid,
+                         'av_id': fid,
+                         'role': frole,
+                         'badge': fbadge,
+                         'ts': delay
             }
 
         obj.additional_data.update({'jid': jid,
@@ -335,7 +338,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'av_id': id,
                                     'role': role,
                                     'badge': badge,
-                                    'forward': forward_m
+                                    'forward': forward_m,
+                                    'ts': datetime.datetime.utcnow().isoformat()
                                     })
         print(obj.additional_data)
         account = None
@@ -352,7 +356,8 @@ class XabberGroupsPlugin(GajimPlugin):
         for jid in self.controls[account]:
             if jid not in allowjids:
                 continue
-            self.controls[account][jid].print_real_text(obj)
+            if jid == room:
+                self.controls[account][jid].print_real_text(obj)
 
     @log_calls('XabberGroupsPlugin')
     def send_call_single_avatar(self, account, room_jid, u_id, av_id):
@@ -390,6 +395,14 @@ class XabberGroupsPlugin(GajimPlugin):
 
 class Base(object):
 
+    # TODO ask for story, when connect
+    '''
+    <iq type='set' to='omnomnimus@xmppdev01.xabber.com' id='juliet1'>
+      <query xmlns='urn:xmpp:mam:2' queryid='f27' />
+    </iq>
+    '''
+
+
     def __init__(self, plugin, textview, chat_control=None):
         # recieve textview to work with
         print('yoyoyoy\n'*50)
@@ -417,10 +430,11 @@ class Base(object):
         self.textview.tv.connect_after('size-allocate', self.resize)
 
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
+        self.scrolled.modify_bg(Gtk.StateFlags.NORMAL, Gdk.color_parse("#FFFFFF"))
         # expand in textview doesnt work
         self.textview.tv.add(self.scrolled)
 
-        if chat_control:
+        if chat_control and jid in allowjids:
             self.create_buttons(chat_control)
 
     def resize(self, widget, r):
@@ -677,25 +691,28 @@ class Base(object):
     def print_real_text(self, obj):
 
         additional_data = obj.additional_data
+        SAME_FROM = False
         nickname = None
         user_id = None
+        message = None
+        role = None
+        badge = None
         print(additional_data)
 
-        SAME_FROM = False
-        IS_MSG = False
-        if additional_data != {}:
-            IS_MSG = True
+
+        try:
+            nickname = additional_data['nickname']
+            message = additional_data['message']
+            role = additional_data['role']
+            badge = additional_data['badge']
             if self.previous_message_from == additional_data['id']:
                 SAME_FROM = True
             self.previous_message_from = additional_data['id']
-
-        else:
+            IS_MSG = True
+        except:
+            IS_MSG = False
             self.previous_message_from = None
 
-        nickname = additional_data['nickname']
-        message = additional_data['message']
-        role = additional_data['role']
-        badge = additional_data['badge']
 
         buffer_ = self.textview.tv.get_buffer()
 
@@ -704,10 +721,21 @@ class Base(object):
         self.textview.plugin_modified = True
         start = buffer_.get_start_iter()
         end = buffer_.get_end_iter()
-        timestamp = buffer_.get_text(start, end, True)
         buffer_.delete(start, end)
-        #timestamp = timestamp.split('[')[1].split(']')[0]
-        timestamp = '[time]'
+
+        timestamp = str(additional_data['ts'])
+
+        dttoday = datetime.date.today()
+        dttoday = str(dttoday)[2:10]
+        dtdate = timestamp.split('T')[0]
+        dtdate = str(dtdate)[2:10]
+        dttime = timestamp.split('T')[1]
+        dttime = dttime[:8]
+        if dttoday == dtdate:
+            timestamp = dttime
+        else:
+            timestamp = dtdate
+
 
         if IS_MSG:
             self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
@@ -718,10 +746,6 @@ class Base(object):
 
 
     def on_avatar_press_event(self, eb, event, additional_data):
-        isme = False
-        try: h = additional_data['nickname']
-        except: isme = True
-
         def on_ok():
             return
 
@@ -730,26 +754,21 @@ class Base(object):
 
         # left click
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
-            if isme:
-                dialog = dialogs.NonModalConfirmationDialog('hello', sectext='it is your avatar',
-                    on_response_ok=on_ok, on_response_cancel=on_cancel)
-                dialog.popup()
-            else:
-                pritext = _('user data')
-                sectext = _('%(name)s  info. \n'
-                            'name: %(name)s \n'
-                            'role: %(role)s \n'
-                            'jid: %(jid)s \n'
-                            'id: %(id)s \n'
-                            'avatar id: %(av_id)s \n'
-                            'two buttons exist:') % {'name': additional_data['nickname'],
-                                                     'role': additional_data['role'],
-                                                     'jid': additional_data['jid'],
-                                                     'id': additional_data['id'],
-                                                     'av_id': additional_data['av_id']}
-                dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
-                    on_response_ok=on_ok, on_response_cancel=on_cancel)
-                dialog.popup()
+            pritext = _('user data')
+            sectext = _('%(name)s  info. \n'
+                        'name: %(name)s \n'
+                        'role: %(role)s \n'
+                        'jid: %(jid)s \n'
+                        'id: %(id)s \n'
+                        'avatar id: %(av_id)s \n'
+                        'two buttons exist:') % {'name': additional_data['nickname'],
+                                                 'role': additional_data['role'],
+                                                 'jid': additional_data['jid'],
+                                                 'id': additional_data['id'],
+                                                 'av_id': additional_data['av_id']}
+            dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
+                on_response_ok=on_ok, on_response_cancel=on_cancel)
+            dialog.popup()
 
         # right klick
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
@@ -803,9 +822,6 @@ class Base(object):
     def create_buttons(self, chat_control):
         self.actions_hbox = chat_control.xml.get_object('hbox')
 
-        #childs = self.actions_hbox.get_children()
-
-
         css = '''#Xbutton {
         margin: 0px 5px;
         padding: 0px 10px;
@@ -836,7 +852,11 @@ class Base(object):
         background: #E0E0E0;
         }
         '''
-
+        gridcss = '''
+        #XCeventgrid {
+        margin: 16px 5px;
+        padding: 0px 10px;}
+        '''
 
         # buttons configs
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
@@ -861,27 +881,33 @@ class Base(object):
         self.button_reply.set_name('Xbutton')
 
         self.button_cancel = Gtk.Button(label='CANCEL', stock=None, use_underline=False)
-        self.button_cancel.set_tooltip_text(_('resend printed messages for this user'))
+        self.button_cancel.set_tooltip_text(_('uncheck checked messages'))
         id_ = self.button_cancel.connect('clicked', self.remove_message_selection)
         chat_control.handlers[id_] = self.button_cancel
         gtkgui_helpers.add_css_to_widget(self.button_cancel, css)
         self.button_cancel.set_name('XCbutton')
+        self.button_cancel.set_halign(Gtk.Align.END)
 
+        # button height to act hbox
         self.button_copy.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_forward.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_reply.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_cancel.get_style_context().add_class('chatcontrol-actionbar-button')
 
         self.buttongrid = Gtk.Grid()
-        self.buttongrid.attach(self.button_copy, 0, 0, 1, 1)
-        self.buttongrid.attach(self.button_forward, 1, 0, 1, 1)
-        self.buttongrid.attach(self.button_reply, 2, 0, 1, 1)
+        gtkgui_helpers.add_css_to_widget(self.buttongrid, css)
+        self.buttongrid.set_name('XCeventgrid')
+        self.buttongrid.set_hexpand(True)
+        self.buttongrid.attach(self.button_forward, 0, 0, 1, 1)
+        self.buttongrid.attach(self.button_reply, 1, 0, 1, 1)
+        self.buttongrid.attach(self.button_copy, 2, 0, 1, 1)
         self.buttongrid.attach(self.button_cancel, 3, 0, 1, 1)
         self.actions_hbox.add(self.buttongrid)
         self.buttongrid.show()
         self.actions_hbox.pack_start(self.buttongrid, True, True, 0)
         self.actions_hbox.reorder_child(self.buttongrid, 0)
 
+        self.actions_hbox.connect_after('size-allocate', self.resize_actions)
         self.button_copy.set_size_request(95, 35)
         self.button_forward.set_size_request(95, 35)
         self.button_reply.set_size_request(95, 35)
@@ -899,6 +925,8 @@ class Base(object):
         self.was_wisible_acts = []
         self.show_othr_hide_xbtn()
 
+    def resize_actions(self, widget, r):
+        self.button_cancel.set_property("margin-left", r.width - 420)
 
     def remove_message_selection(self, w=None):
         self.chosen_messages_data = []
