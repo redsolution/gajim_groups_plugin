@@ -69,8 +69,8 @@ class XabberGroupsPlugin(GajimPlugin):
         self.events_handlers = {
             'decrypted-message-received': (ged.OUT_PRECORE, self._nec_decrypted_message_received),
             'raw-iq-received': (ged.OUT_PRECORE, self._nec_iq_received),
-            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing)
-            # TODO _nec_message_outgoing
+            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing),
+            # 'mam-decrypted-message-received': (ged.POSTGUI, self.xabber_history_message_recieved),
         }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
@@ -121,6 +121,7 @@ class XabberGroupsPlugin(GajimPlugin):
         stanza_send.getTag('query').setAttr('id', str(id))
         app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
+    @log_calls('XabberGroupsPlugin')
     def send_ask_for_history(self, chat_control, to_jid, id=''):
         stanza_send = nbxmpp.Iq(to=to_jid, typ='set')
         stanza_send.setAttr('id', str(id))
@@ -166,12 +167,28 @@ class XabberGroupsPlugin(GajimPlugin):
                         'badge': badge,
                         'nickname': nickname,
                         'av_id': av_id}
-            print('data\n'*10)
             room = obj.stanza.getAttr('from')
             myjid = obj.stanza.getAttr('to')
             myjid = app.get_jid_without_resource(str(myjid))
 
-            print(room, myjid)
+            if av_id != '':
+                account = None
+                accounts = app.contacts.get_accounts()
+                myjid = obj.stanza.getAttr('to')
+                for acc in accounts:
+                    realjid = app.get_jid_from_account(acc)
+                    realjid = app.get_jid_without_resource(str(realjid))
+                    if myjid == realjid:
+                        account = acc
+
+                for jid in self.controls[account]:
+                    if jid == room and jid in allowjids:
+                        print(account)
+                        print(jid)
+                        print('remove select')
+                        self.controls[account][jid].remove_message_selection()
+                        self.controls[account][jid].updateavatar(av_id)
+
             self.userdata[room] = {}
             self.userdata[room][myjid] = userdata
             print(self.userdata[room][myjid])
@@ -181,15 +198,17 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def _nec_decrypted_message_received(self, obj):
-        '''
-        get incoming messages, check it, do smth with them
-        '''
         cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
         if cr_invite:
             self.invite_to_chatroom_recieved(obj)
         elif cr_message:
             self.xabber_message_recieved(obj)
+
+    @log_calls('XabberGroupsPlugin')
+    def xabber_history_message_recieved(self, obj):
+        print('message get!!!\n'*10)
+
 
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):
@@ -834,6 +853,11 @@ class Base(object):
         margin: 16px 5px;
         padding: 0px 10px;}
         '''
+        # avatar button
+        avatar_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
+        avatar_image = Gtk.Image.new_from_pixbuf(avatar_pixbuf)
+        self.conversation_avatar_button = Gtk.EventBox()
+        self.conversation_avatar_button.add(avatar_image)
 
         # buttons configs
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
@@ -879,10 +903,13 @@ class Base(object):
         self.buttongrid.attach(self.button_reply, 1, 0, 1, 1)
         self.buttongrid.attach(self.button_copy, 2, 0, 1, 1)
         self.buttongrid.attach(self.button_cancel, 3, 0, 1, 1)
-        self.actions_hbox.add(self.buttongrid)
+        #self.actions_hbox.add(self.buttongrid)
         self.buttongrid.show()
         self.actions_hbox.pack_start(self.buttongrid, True, True, 0)
         self.actions_hbox.reorder_child(self.buttongrid, 0)
+
+        self.actions_hbox.pack_start(self.conversation_avatar_button, False, False, 0)
+        self.actions_hbox.reorder_child(self.conversation_avatar_button, 0)
 
         self.actions_hbox.connect_after('size-allocate', self.resize_actions)
         self.button_copy.set_size_request(95, 35)
@@ -904,6 +931,22 @@ class Base(object):
 
     def resize_actions(self, widget, r):
         self.button_cancel.set_property("margin-left", r.width - 420)
+
+    def updateavatar(self, av_id):
+        # TODO update_avatar
+        try:
+            path = os.path.normpath(AVATARS_DIR + '/' + av_id + '.jpg')
+            file = open(path)
+            file = os.path.normpath(path)
+        except:
+            file = self.default_avatar
+
+        print('avatar changed!\n'*50)
+        avatar_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
+        avatar_image = Gtk.Image.new_from_pixbuf(avatar_pixbuf)
+        for element in self.conversation_avatar_button.get_children():
+            self.conversation_avatar_button.remove(element)
+        self.conversation_avatar_button.add(avatar_image)
 
     def remove_message_selection(self, w=None):
         self.chosen_messages_data = []
@@ -942,7 +985,6 @@ class Base(object):
         for data in self.chosen_messages_data:
             try:
                 copied_text += '[' + data[2] + ']' + data[3] + ': ' + data[4] + '\n'
-                # TODO add name, badge etc. to 'me' messages
             finally:
                 copied_text += ''
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
