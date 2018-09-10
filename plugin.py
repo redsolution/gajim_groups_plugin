@@ -87,7 +87,7 @@ class XabberGroupsPlugin(GajimPlugin):
         if to_jid in allowjids:
             add_data = self.userdata[to_jid][from_jid]
             obj.additional_data.update({'jid': add_data['jid'],
-                                        'nickname': add_data['jid'],
+                                        'nickname': add_data['nickname'],
                                         'id': add_data['id'],
                                         'av_id': add_data['av_id'],
                                         'badge': add_data['badge'],
@@ -107,23 +107,26 @@ class XabberGroupsPlugin(GajimPlugin):
         for jid in self.controls[account]:
             if jid not in allowjids:
                 continue
-            self.controls[account][jid].print_real_text(obj)
+            if jid == to_jid:
+                self.controls[account][jid].print_real_text(obj)
 
         print('message sent\n'*50)
         return
 
     @log_calls('XabberGroupsPlugin')
     def send_ask_for_rights(self, chat_control, to_jid, id=''):
-        print(to_jid)
-        print(chat_control.contact.name)
-        print(chat_control.contact)
-        print(chat_control.contact.jid)
         stanza_send = nbxmpp.Iq(to=to_jid, typ='get')
         stanza_send.setAttr('id', str(id))
         stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
         stanza_send.getTag('query').setAttr('id', str(id))
         app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
+    def send_ask_for_history(self, chat_control, to_jid, id=''):
+        stanza_send = nbxmpp.Iq(to=to_jid, typ='set')
+        stanza_send.setAttr('id', str(id))
+        stanza_send.setTag('query').setNamespace('urn:xmpp:mam:2')
+        stanza_send.getTag('query').setAttr('queryid', str(id))
+        app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
@@ -176,7 +179,6 @@ class XabberGroupsPlugin(GajimPlugin):
         finally:
             return
 
-
     @log_calls('XabberGroupsPlugin')
     def _nec_decrypted_message_received(self, obj):
         '''
@@ -184,37 +186,10 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
-        cr_right_query = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights')
         if cr_invite:
             self.invite_to_chatroom_recieved(obj)
         elif cr_message:
             self.xabber_message_recieved(obj)
-        elif cr_right_query:
-            self.rights_query_recieved(obj)
-
-    @log_calls('XabberGroupsPlugin')
-    def rights_query_recieved(self, obj):
-        myjid = obj.stanza.getAttr('to')
-        myjid = app.get_jid_without_resource(str(myjid))
-        fromjid = obj.jid
-        userid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('id').getData()
-        jid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('jid').getData()
-        badge = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('badge').getData()
-        nickname = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('nickname').getData()
-        av_id = ''
-        try:
-            av_id = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('metadata',
-                                                                                      namespace='urn:xmpp:avatar:metadata')
-            av_id = av_id.getTag('info').getAttr('id')
-        except:
-            av_id = 'unknown'
-        rights = {'jid': jid,
-                  'nickname': nickname,
-                  'id': userid,
-                  'av_id': av_id,
-                  'badge': badge
-            }
-
 
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):
@@ -374,7 +349,6 @@ class XabberGroupsPlugin(GajimPlugin):
             stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(av_id))
             app.connections[account].connection.send(stanza_send, now=True)
 
-
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
         account = chat_control.contact.account.name
@@ -384,6 +358,7 @@ class XabberGroupsPlugin(GajimPlugin):
             self.controls[account] = {}
         self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
         self.send_ask_for_rights(chat_control, jid)
+        self.send_ask_for_history(chat_control, jid)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -446,7 +421,6 @@ class Base(object):
                 j[2].set_size_request(r.width - (64+95), -1)
             except: pass
 
-        print(self.actions_hbox.get_children())
 
     def do_resize(self, messagebox):
         w = self.textview.tv.get_allocated_width()
@@ -462,11 +436,25 @@ class Base(object):
             del self.handlers[i]
 
 
-    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp):
+    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data):
 
         IS_FORWARD = False
         forward = None
+        timestamp = ''
         try:
+            timestamp = str(additional_data['ts'])
+            dttoday = datetime.date.today()
+            dttoday = str(dttoday)[2:10]
+            dtdate = timestamp.split('T')[0]
+            dtdate = str(dtdate)[2:10]
+            dttime = timestamp.split('T')[1]
+            dttime = dttime[:8]
+            if dttoday == dtdate:
+                timestamp = dttime
+            else:
+                timestamp = dtdate
+
+
             forward = additional_data['forward']
             if forward != None:
                 IS_FORWARD = True
@@ -667,7 +655,7 @@ class Base(object):
         simplegrid.attach(Message_eventBox, 0, 0, 3, 1)
         self.current_message_id += 1
         Message_eventBox.connect('button-press-event', self.on_message_click, additional_data,
-                                 self.current_message_id, simplegrid, timestamp, nickname, message)
+                                 self.current_message_id, simplegrid, str(additional_data['ts']), nickname, message)
         Message_eventBox.connect('enter-notify-event', self.on_enter_event)
         Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
@@ -723,22 +711,11 @@ class Base(object):
         end = buffer_.get_end_iter()
         buffer_.delete(start, end)
 
-        timestamp = str(additional_data['ts'])
 
-        dttoday = datetime.date.today()
-        dttoday = str(dttoday)[2:10]
-        dtdate = timestamp.split('T')[0]
-        dtdate = str(dtdate)[2:10]
-        dttime = timestamp.split('T')[1]
-        dttime = dttime[:8]
-        if dttoday == dtdate:
-            timestamp = dttime
-        else:
-            timestamp = dtdate
 
 
         if IS_MSG:
-            self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
+            self.print_message(SAME_FROM, nickname, message, role, badge, additional_data)
         else:
             self.print_server_info(message)
 
