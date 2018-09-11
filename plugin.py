@@ -67,14 +67,14 @@ class XabberGroupsPlugin(GajimPlugin):
         self.history_window_control = None
 
         self.events_handlers = {
-            'decrypted-message-received': (ged.OUT_PRECORE, self._nec_decrypted_message_received),
+            'decrypted-message-received': (ged.OUT_POSTGUI1, self._nec_decrypted_message_received),
             'raw-iq-received': (ged.OUT_PRECORE, self._nec_iq_received),
-            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing),
-            # 'mam-decrypted-message-received': (ged.POSTGUI, self.xabber_history_message_recieved),
+            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing)
         }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
                                        self.disconnect_from_chat_control),
+            'print_real_text': (self.print_real_text, None),
         }
 
     @log_calls('XabberGroupsPlugin')
@@ -93,7 +93,7 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'badge': add_data['badge'],
                                         'role': '',
                                         'message': obj.message,
-                                        'ts': datetime.datetime.utcnow().isoformat()
+                                        'ts': datetime.datetime.now().isoformat()
                                         })
         account = None
         accounts = app.contacts.get_accounts()
@@ -103,31 +103,23 @@ class XabberGroupsPlugin(GajimPlugin):
             realjid = app.get_jid_without_resource(str(realjid))
             if myjid == realjid:
                 account = acc
-
         for jid in self.controls[account]:
             if jid not in allowjids:
                 continue
-            if jid == to_jid:
-                self.controls[account][jid].print_real_text(obj)
-
-        print('message sent\n'*50)
-        return
+            self.controls[account][jid].print_real_text(obj)
 
     @log_calls('XabberGroupsPlugin')
     def send_ask_for_rights(self, chat_control, to_jid, id=''):
+        print(to_jid)
+        print(chat_control.contact.name)
+        print(chat_control.contact)
+        print(chat_control.contact.jid)
         stanza_send = nbxmpp.Iq(to=to_jid, typ='get')
         stanza_send.setAttr('id', str(id))
         stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
         stanza_send.getTag('query').setAttr('id', str(id))
         app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
-    @log_calls('XabberGroupsPlugin')
-    def send_ask_for_history(self, chat_control, to_jid, id=''):
-        stanza_send = nbxmpp.Iq(to=to_jid, typ='set')
-        stanza_send.setAttr('id', str(id))
-        stanza_send.setTag('query').setNamespace('urn:xmpp:mam:2')
-        stanza_send.getTag('query').setAttr('queryid', str(id))
-        app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
@@ -148,7 +140,7 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
         try:
-            # check is iq = avatardata from xabber gc
+            # check is iq from xabber gc
             item = obj.stanza.getTag('pubsub').getTag('items').getTag('item')
             base64avatar = item.getTag('data', namespace='urn:xmpp:avatar:data').getData()
             id = item.getAttr('id')
@@ -167,47 +159,56 @@ class XabberGroupsPlugin(GajimPlugin):
                         'badge': badge,
                         'nickname': nickname,
                         'av_id': av_id}
+            print('data\n'*10)
             room = obj.stanza.getAttr('from')
             myjid = obj.stanza.getAttr('to')
             myjid = app.get_jid_without_resource(str(myjid))
-
-            if av_id != '':
-                account = None
-                accounts = app.contacts.get_accounts()
-                myjid = obj.stanza.getAttr('to')
-                for acc in accounts:
-                    realjid = app.get_jid_from_account(acc)
-                    realjid = app.get_jid_without_resource(str(realjid))
-                    if myjid == realjid:
-                        account = acc
-
-                for jid in self.controls[account]:
-                    if jid == room and jid in allowjids:
-                        print(account)
-                        print(jid)
-                        print('remove select')
-                        self.controls[account][jid].remove_message_selection()
-                        self.controls[account][jid].updateavatar(av_id)
-
+            print(room, myjid)
             self.userdata[room] = {}
             self.userdata[room][myjid] = userdata
             print(self.userdata[room][myjid])
-
         finally:
             return
 
+
     @log_calls('XabberGroupsPlugin')
     def _nec_decrypted_message_received(self, obj):
+        '''
+        get incoming messages, check it, do smth with them
+        '''
         cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
+        cr_right_query = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights')
         if cr_invite:
             self.invite_to_chatroom_recieved(obj)
         elif cr_message:
             self.xabber_message_recieved(obj)
+        elif cr_right_query:
+            self.rights_query_recieved(obj)
 
     @log_calls('XabberGroupsPlugin')
-    def xabber_history_message_recieved(self, obj):
-        print('message get!!!\n'*10)
+    def rights_query_recieved(self, obj):
+        myjid = obj.stanza.getAttr('to')
+        myjid = app.get_jid_without_resource(str(myjid))
+        fromjid = obj.jid
+        userid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('id').getData()
+        jid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('jid').getData()
+        badge = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('badge').getData()
+        nickname = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('nickname').getData()
+        av_id = ''
+        try:
+            av_id = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('metadata',
+                                                                                      namespace='urn:xmpp:avatar:metadata')
+            av_id = av_id.getTag('info').getAttr('id')
+        except:
+            av_id = 'unknown'
+        rights = {'jid': jid,
+                  'nickname': nickname,
+                  'id': userid,
+                  'av_id': av_id,
+                  'badge': badge
+            }
+
 
 
     @log_calls('XabberGroupsPlugin')
@@ -246,7 +247,6 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
-        print('messageeeeee\n'*50)
         room = obj.jid
         addallowjid(room)
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
@@ -295,8 +295,6 @@ class XabberGroupsPlugin(GajimPlugin):
                     fjid = jid
                 else:
                     fjid = 'unknown'
-
-
             fid = None
             try:
                 fid = fobj.getTag('x', namespace=XABBER_GC).getTag('metadata',
@@ -316,13 +314,13 @@ class XabberGroupsPlugin(GajimPlugin):
                 fbadge = badge
 
             forward_m = {'jid': fjid,
-                         'nickname': fname,
-                         'message': fmessage,
-                         'id': fuserid,
-                         'av_id': fid,
-                         'role': frole,
-                         'badge': fbadge,
-                         'ts': delay
+                        'nickname': fname,
+                        'message': fmessage,
+                        'id': fuserid,
+                        'av_id': fid,
+                        'role': frole,
+                        'badge': fbadge,
+                        'ts': delay
             }
 
         obj.additional_data.update({'jid': jid,
@@ -333,9 +331,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'role': role,
                                     'badge': badge,
                                     'forward': forward_m,
-                                    'ts': datetime.datetime.utcnow().isoformat()
+                                    'ts': datetime.datetime.now().isoformat()
                                     })
-        print(obj.additional_data)
         account = None
         accounts = app.contacts.get_accounts()
         myjid = obj.stanza.getAttr('to')
@@ -346,12 +343,6 @@ class XabberGroupsPlugin(GajimPlugin):
                 account = acc
         if id != 'unknown' and account:
             self.send_call_single_avatar(account, room, userid, id)
-
-        for jid in self.controls[account]:
-            if jid not in allowjids:
-                continue
-            if jid == room:
-                self.controls[account][jid].print_real_text(obj)
 
     @log_calls('XabberGroupsPlugin')
     def send_call_single_avatar(self, account, room_jid, u_id, av_id):
@@ -368,6 +359,7 @@ class XabberGroupsPlugin(GajimPlugin):
             stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(av_id))
             app.connections[account].connection.send(stanza_send, now=True)
 
+
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
         account = chat_control.contact.account.name
@@ -377,7 +369,6 @@ class XabberGroupsPlugin(GajimPlugin):
             self.controls[account] = {}
         self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
         self.send_ask_for_rights(chat_control, jid)
-        self.send_ask_for_history(chat_control, jid)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -386,25 +377,44 @@ class XabberGroupsPlugin(GajimPlugin):
         self.controls[account][jid].deinit_handlers()
         del self.controls[account][jid]
 
+    @log_calls('XabberGroupsPlugin')
+    def connect_with_history(self, history_window):
+        if self.history_window_control:
+            self.history_window_control.deinit_handlers()
+        self.history_window_control = Base(
+            self, history_window.history_textview)
+
+    @log_calls('XabberGroupsPlugin')
+    def disconnect_from_history(self, history_window):
+        if self.history_window_control:
+            self.history_window_control.deinit_handlers()
+        self.history_window_control = None
+
+    @log_calls('XabberGroupsPlugin')
+    def print_real_text(self, tv, real_text, text_tags, graphics,
+                        iter_, additional_data):
+        if tv.used_in_history_window and self.history_window_control:
+            self.history_window_control.print_real_text(
+                real_text, text_tags, graphics, iter_, additional_data)
+
+        account = tv.account
+        for jid in self.controls[account]:
+            if self.controls[account][jid].textview != tv or jid not in allowjids:
+                continue
+            self.controls[account][jid].print_real_text(
+                real_text, text_tags, graphics, iter_, additional_data)
+            return
+
+
 
 class Base(object):
 
-    # TODO ask for story, when connect
-    '''
-    <iq type='set' to='omnomnimus@xmppdev01.xabber.com' id='juliet1'>
-      <query xmlns='urn:xmpp:mam:2' queryid='f27' />
-    </iq>
-    '''
-
-
     def __init__(self, plugin, textview, chat_control=None):
         # recieve textview to work with
-        print('yoyoyoy\n'*50)
-        myjid = app.get_jid_from_account(chat_control.contact.account.name)
-        jid = chat_control.contact.jid
-        print(myjid)
-        print(jid)
-        #self.in_room_userdata = plugin.userdata[jid][myjid]
+
+        cli_jid = app.get_jid_from_account(chat_control.contact.account.name)
+        room_jid = chat_control.contact.jid
+
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
@@ -424,11 +434,10 @@ class Base(object):
         self.textview.tv.connect_after('size-allocate', self.resize)
 
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
-        self.scrolled.modify_bg(Gtk.StateFlags.NORMAL, Gdk.color_parse("#FFFFFF"))
         # expand in textview doesnt work
         self.textview.tv.add(self.scrolled)
 
-        if chat_control and jid in allowjids:
+        if chat_control and room_jid in allowjids:
             self.create_buttons(chat_control)
 
     def resize(self, widget, r):
@@ -440,6 +449,7 @@ class Base(object):
                 j[2].set_size_request(r.width - (64+95), -1)
             except: pass
 
+        print(self.actions_hbox.get_children())
 
     def do_resize(self, messagebox):
         w = self.textview.tv.get_allocated_width()
@@ -455,25 +465,11 @@ class Base(object):
             del self.handlers[i]
 
 
-    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data):
+    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp):
 
         IS_FORWARD = False
         forward = None
-        timestamp = ''
         try:
-            timestamp = str(additional_data['ts'])
-            dttoday = datetime.date.today()
-            dttoday = str(dttoday)[2:10]
-            dtdate = timestamp.split('T')[0]
-            dtdate = str(dtdate)[2:10]
-            dttime = timestamp.split('T')[1]
-            dttime = dttime[:8]
-            if dttoday == dtdate:
-                timestamp = dttime
-            else:
-                timestamp = dtdate
-
-
             forward = additional_data['forward']
             if forward != None:
                 IS_FORWARD = True
@@ -505,17 +501,12 @@ class Base(object):
         simplegrid.attach(show, 0, 0, 1, 1)
         simplegrid.attach(show2, 1, 0, 1, 1)
         simplegrid.attach(show3, 2, 0, 1, 1)
-        css = '''#messagegrid {
-        padding: 10px 0px;}'''
-        gtkgui_helpers.add_css_to_widget(simplegrid, css)
-        simplegrid.set_name('messagegrid')
-        #self.box.add(simplegrid)
 
         # SHOW1
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
         image = Gtk.Image.new_from_pixbuf(pixbuf)
         css = '''#xavatar {
-        margin: 4px 16px 0px 16px;}'''
+        margin: 12px 16px 0px 16px;}'''
         gtkgui_helpers.add_css_to_widget(image, css)
         image.set_name('xavatar')
         avatar_event_box = Gtk.EventBox()
@@ -529,16 +520,13 @@ class Base(object):
         if not SAME_FROM:
             # SHOW2
             name_badge_role = Gtk.Grid()
-            css = '''#name_badge_role {
-            margin-bottom: 6px;}'''
-            gtkgui_helpers.add_css_to_widget(name_badge_role, css)
-            name_badge_role.set_name('name_badge_role')
 
             info_name = Gtk.Label(nickname)
             css = '''#info_name {
             color: #D32F2F;
             font-size: 12px;
-            margin-right: 4px;}'''
+            margin-right: 4px;
+            margin-top: 10px;}'''
             gtkgui_helpers.add_css_to_widget(info_name, css)
             info_name.set_name('info_name')
 
@@ -546,7 +534,8 @@ class Base(object):
             css = '''#info_badge {
             color: black;
             font-size: 10px;
-            margin-right: 4px;}'''
+            margin-right: 4px;
+            margin-top: 10px;}'''
             gtkgui_helpers.add_css_to_widget(info_badge, css)
             info_badge.set_name('info_badge')
 
@@ -557,7 +546,8 @@ class Base(object):
             background-color: #CCC;
             border-radius: 3px;
             padding: 2px 3px 0px 3px;
-            margin: 2px;}'''
+            margin: 2px;
+            margin-top: 10px;}'''
             gtkgui_helpers.add_css_to_widget(info_role, css)
             info_role.set_name('info_role')
 
@@ -570,7 +560,7 @@ class Base(object):
             image2 = Gtk.Image.new_from_pixbuf(pixbuf2)
             css = '''#xavatar-forward {
             margin-right: 8px;
-            margin-top: 4px;}'''
+            margin-top: 12px;}'''
             gtkgui_helpers.add_css_to_widget(image2, css)
             image2.set_name('xavatar-forward')
 
@@ -585,16 +575,13 @@ class Base(object):
             show_forward_av.add(avatar2_event_box)
 
             name_badge_role2 = Gtk.Grid()
-            css = '''#name_badge_role {
-            margin-bottom: 6px;}'''
-            gtkgui_helpers.add_css_to_widget(name_badge_role2, css)
-            name_badge_role2.set_name('name_badge_role')
 
             info_name2 = Gtk.Label(forward['nickname'])
             css = '''#info_name {
             color: #D32F2F;
             font-size: 12px;
-            margin-right: 4px;}'''
+            margin-right: 4px;
+            margin-top: 10px;}'''
             gtkgui_helpers.add_css_to_widget(info_name2, css)
             info_name2.set_name('info_name')
 
@@ -602,7 +589,8 @@ class Base(object):
             css = '''#info_badge {
             color: black;
             font-size: 10px;
-            margin-right: 4px;}'''
+            margin-right: 4px;
+            margin-top: 10px;}'''
             gtkgui_helpers.add_css_to_widget(info_badge2, css)
             info_badge2.set_name('info_badge')
 
@@ -613,17 +601,44 @@ class Base(object):
             background-color: #CCC;
             border-radius: 3px;
             padding: 2px 3px 0px 3px;
-            margin: 2px;}'''
+            margin: 2px;
+            margin-top: 10px;}'''
             gtkgui_helpers.add_css_to_widget(info_role2, css)
             info_role2.set_name('info_role')
+
+            try:
+                info_ts = str(forward['ts'])
+                dttoday = datetime.date.today()
+                dttoday = str(dttoday)[2:10]
+                dtdate = info_ts.split('T')[0]
+                dtdate = str(dtdate)[2:10]
+                dttime = info_ts.split('T')[1]
+                dttime = dttime[:8]
+                if dttoday == dtdate:
+                    info_ts = dttime
+                else:
+                    info_ts = dtdate
+            except:
+                info_ts = '???'
+
+            info_timestamp = Gtk.Label(info_ts)
+            css = '''#info_ts {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;}'''
+            gtkgui_helpers.add_css_to_widget(info_timestamp, css)
+            info_timestamp.set_name('info_ts')
 
             name_badge_role2.attach(info_name2, 0, 0, 1, 1)
             name_badge_role2.attach(info_badge2, 1, 0, 1, 1)
             name_badge_role2.attach(info_role2, 2, 0, 1, 1)
+            name_badge_role2.attach(info_timestamp, 3, 0, 1, 1)
 
             messagetext = Gtk.Label()
             css = '''#message_font_size {
-            font-size: 12px;}'''
+            font-size: 12px;
+            margin-top: 6px;
+            margin-bottom: 8px;}'''
             gtkgui_helpers.add_css_to_widget(messagetext, css)
             messagetext.set_name('message_font_size')
             messagetext.set_text(forward['message'])
@@ -644,7 +659,9 @@ class Base(object):
         else:
             messagecontainer = Gtk.Label()
             css = '''#message_font_size {
-            font-size: 12px;}'''
+            font-size: 12px;
+            margin-top: 6px;
+            margin-bottom: 8px;}'''
             gtkgui_helpers.add_css_to_widget(messagecontainer, css)
             messagecontainer.set_name('message_font_size')
             messagecontainer.set_text(message)
@@ -660,8 +677,9 @@ class Base(object):
         timestamp_label = Gtk.Label(timestamp)
         css = '''#xtimestamp {
         margin: 0px 16px;
+        margin-top: 10px;
         font-size: 12px;
-        color: #666}'''
+        color: #666;}'''
         gtkgui_helpers.add_css_to_widget(timestamp_label, css)
         timestamp_label.set_name('xtimestamp')
         show3.add(timestamp_label)
@@ -674,7 +692,7 @@ class Base(object):
         simplegrid.attach(Message_eventBox, 0, 0, 3, 1)
         self.current_message_id += 1
         Message_eventBox.connect('button-press-event', self.on_message_click, additional_data,
-                                 self.current_message_id, simplegrid, str(additional_data['ts']), nickname, message)
+                                 self.current_message_id, simplegrid, timestamp, nickname, message)
         Message_eventBox.connect('enter-notify-event', self.on_enter_event)
         Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
@@ -684,29 +702,26 @@ class Base(object):
         simplegrid.show_all()
 
     def print_server_info(self, real_text):
-        show = Gtk.Label(real_text)
+        server_info = Gtk.Label(real_text)
         css = '''#server_info {
         padding: 8px 0px;
         font-size: 12px;
         color: #9E9E9E;
         font-style: italic;}'''
-        gtkgui_helpers.add_css_to_widget(show, css)
-        show.set_name('server_info')
-        self.box.pack_start(show, False, False, 0)
-        show.show_all()
+        gtkgui_helpers.add_css_to_widget(server_info, css)
+        server_info.set_name('server_info')
+        self.box.pack_start(server_info, False, False, 0)
+        server_info.show_all()
 
-    def print_real_text(self, obj):
+    def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
-        additional_data = obj.additional_data
-        SAME_FROM = False
         nickname = None
         user_id = None
-        message = None
-        role = None
-        badge = None
         print(additional_data)
+        print(graphics)
+        print(type(graphics))
 
-
+        SAME_FROM = False
         try:
             nickname = additional_data['nickname']
             message = additional_data['message']
@@ -721,6 +736,7 @@ class Base(object):
             self.previous_message_from = None
 
 
+
         buffer_ = self.textview.tv.get_buffer()
 
         # delete old "[time] name: "
@@ -730,13 +746,25 @@ class Base(object):
         end = buffer_.get_end_iter()
         buffer_.delete(start, end)
 
-
+        try:
+            timestamp = str(additional_data['ts'])
+            dttoday = datetime.date.today()
+            dttoday = str(dttoday)[2:10]
+            dtdate = timestamp.split('T')[0]
+            dtdate = str(dtdate)[2:10]
+            dttime = timestamp.split('T')[1]
+            dttime = dttime[:8]
+            if dttoday == dtdate:
+                timestamp = dttime
+            else:
+                timestamp = dtdate
+        except: timestamp = '???'
 
 
         if IS_MSG:
-            self.print_message(SAME_FROM, nickname, message, role, badge, additional_data)
+            self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
         else:
-            self.print_server_info(message)
+            self.print_server_info(real_text)
 
 
 
@@ -763,7 +791,7 @@ class Base(object):
                                                  'id': additional_data['id'],
                                                  'av_id': additional_data['av_id']}
             dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
-                on_response_ok=on_ok, on_response_cancel=on_cancel)
+                                                        on_response_ok=on_ok, on_response_cancel=on_cancel)
             dialog.popup()
 
         # right klick
@@ -788,9 +816,10 @@ class Base(object):
         # search message in chosen_messages_data by id
         for message_data in self.chosen_messages_data:
             if message_data[0] == id:
+                print('deactivate')
                 self.chosen_messages_data.remove(message_data)
+                print(self.chosen_messages_data)
                 css = '''#messagegrid {
-                padding: 10px 0px;
                 background-color: #FFFFFF;}'''
                 gtkgui_helpers.add_css_to_widget(widget, css)
                 widget.set_name('messagegrid')
@@ -800,10 +829,11 @@ class Base(object):
                     self.show_xbtn_hide_othr()
                 return
 
+        print('activate')
         new_message_data = [id, data, timestamp, nickname, message]
         self.chosen_messages_data.append(new_message_data)
+        print(self.chosen_messages_data)
         css = '''#messagegrid {
-        padding: 10px 0px;
         background-color: #FFCCCC;}'''
         gtkgui_helpers.add_css_to_widget(widget, css)
         widget.set_name('messagegrid')
@@ -818,9 +848,12 @@ class Base(object):
     def create_buttons(self, chat_control):
         self.actions_hbox = chat_control.xml.get_object('hbox')
 
+        #childs = self.actions_hbox.get_children()
+
+
         css = '''#Xbutton {
-        margin: 0px 5px;
-        padding: 0px 10px;
+        margin: 0 5px;
+        padding: 0 10px;
         color: #FFFFFF;
         background-color: #D32F2F;
         background: #D32F2F;
@@ -829,13 +862,9 @@ class Base(object):
         font-size: 12px;
         font-weight: bold;
         }
-        #Xbutton:hover {
-        box-shadow: 0 5px 11px 0 rgba(0, 0, 0, 0.18), 0 4px 15px 0 rgba(0, 0, 0, 0.15);
-        }
-        
         #XCbutton {
-        margin: 0px 5px;
-        padding: 0px 10px;
+        margin: 0 5px;
+        padding: 0 10px;
         color: #D32F2F;
         background-color: #FFFFFF;
         background: #FFFFFF;
@@ -843,21 +872,12 @@ class Base(object):
         font-size: 12px;
         font-weight: bold;
         }
-        #XCbutton:hover {
+        #XCbutton:hover{
         background-color: #E0E0E0;
         background: #E0E0E0;
         }
         '''
-        gridcss = '''
-        #XCeventgrid {
-        margin: 16px 5px;
-        padding: 0px 10px;}
-        '''
-        # avatar button
-        avatar_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
-        avatar_image = Gtk.Image.new_from_pixbuf(avatar_pixbuf)
-        self.conversation_avatar_button = Gtk.EventBox()
-        self.conversation_avatar_button.add(avatar_image)
+
 
         # buttons configs
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
@@ -882,34 +902,26 @@ class Base(object):
         self.button_reply.set_name('Xbutton')
 
         self.button_cancel = Gtk.Button(label='CANCEL', stock=None, use_underline=False)
-        self.button_cancel.set_tooltip_text(_('uncheck checked messages'))
+        self.button_cancel.set_tooltip_text(_('resend printed messages for this user'))
         id_ = self.button_cancel.connect('clicked', self.remove_message_selection)
         chat_control.handlers[id_] = self.button_cancel
         gtkgui_helpers.add_css_to_widget(self.button_cancel, css)
         self.button_cancel.set_name('XCbutton')
-        self.button_cancel.set_halign(Gtk.Align.END)
 
-        # button height to act hbox
         self.button_copy.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_forward.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_reply.get_style_context().add_class('chatcontrol-actionbar-button')
         self.button_cancel.get_style_context().add_class('chatcontrol-actionbar-button')
 
         self.buttongrid = Gtk.Grid()
-        gtkgui_helpers.add_css_to_widget(self.buttongrid, css)
-        self.buttongrid.set_name('XCeventgrid')
-        self.buttongrid.set_hexpand(True)
         self.buttongrid.attach(self.button_forward, 0, 0, 1, 1)
         self.buttongrid.attach(self.button_reply, 1, 0, 1, 1)
         self.buttongrid.attach(self.button_copy, 2, 0, 1, 1)
-        self.buttongrid.attach(self.button_cancel, 3, 0, 1, 1)
-        #self.actions_hbox.add(self.buttongrid)
+        self.buttongrid.attach(self.button_cancel, 4, 0, 1, 1)
+        self.actions_hbox.add(self.buttongrid)
         self.buttongrid.show()
         self.actions_hbox.pack_start(self.buttongrid, True, True, 0)
         self.actions_hbox.reorder_child(self.buttongrid, 0)
-
-        self.actions_hbox.pack_start(self.conversation_avatar_button, False, False, 0)
-        self.actions_hbox.reorder_child(self.conversation_avatar_button, 0)
 
         self.actions_hbox.connect_after('size-allocate', self.resize_actions)
         self.button_copy.set_size_request(95, 35)
@@ -932,41 +944,18 @@ class Base(object):
     def resize_actions(self, widget, r):
         self.button_cancel.set_property("margin-left", r.width - 420)
 
-    def updateavatar(self, av_id):
-        # TODO update_avatar
-        try:
-            path = os.path.normpath(AVATARS_DIR + '/' + av_id + '.jpg')
-            file = open(path)
-            file = os.path.normpath(path)
-        except:
-            file = self.default_avatar
-
-        print('avatar changed!\n'*50)
-        avatar_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
-        avatar_image = Gtk.Image.new_from_pixbuf(avatar_pixbuf)
-        for element in self.conversation_avatar_button.get_children():
-            self.conversation_avatar_button.remove(element)
-        self.conversation_avatar_button.add(avatar_image)
-
     def remove_message_selection(self, w=None):
+        print('remove_message_selection')
         self.chosen_messages_data = []
         self.show_othr_hide_xbtn()
         messages = [m for m in self.box.get_children()]
         for widget in messages:
             css = '''#messagegrid {
-            padding: 10px 0px;
             background-color: #FFFFFF;}'''
             gtkgui_helpers.add_css_to_widget(widget, css)
             widget.set_name('messagegrid')
 
     def show_xbtn_hide_othr(self):
-        # TODO ??? make height of buttons block = 100px ???
-        css = '''#message-actions-panel {
-        #height: 100px;
-        #padding: 30px 10px;
-        }'''
-
-
         actions = [m for m in self.actions_hbox.get_children()]
         for act in actions:
             if act.get_visible():
@@ -985,6 +974,7 @@ class Base(object):
         for data in self.chosen_messages_data:
             try:
                 copied_text += '[' + data[2] + ']' + data[3] + ': ' + data[4] + '\n'
+                # TODO add name, badge etc. to 'me' messages
             finally:
                 copied_text += ''
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
