@@ -59,7 +59,6 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def init(self):
-        self.is_active = True
         self.description = _('Adds support Xabber Groups.')
         self.config_dialog = None
         self.controls = {}
@@ -75,7 +74,57 @@ class XabberGroupsPlugin(GajimPlugin):
             'chat_control_base': (self.connect_with_chat_control,
                                        self.disconnect_from_chat_control),
             'print_real_text': (self.print_real_text, None),
+            'roster_draw_contact': (self.connect_with_roster_draw_contact, None),
         }
+
+    @log_calls('XabberGroupsPlugin')
+    def activate(self):
+        self.active = None
+        roster = app.interface.roster
+        col = Gtk.TreeViewColumn()
+        roster.nb_ext_renderers += 1
+        self.renderer_num = 11 + roster.nb_ext_renderers
+        self.renderer = Gtk.CellRendererPixbuf()
+        client_icon_rend = (
+            'xgc_icon', self.renderer, False,
+            'pixbuf', self.renderer_num,
+            roster._fill_pep_pixbuf_renderer, self.renderer_num)
+        # remove old column
+        roster.tree.remove_column(roster.tree.get_column(0))
+        # add new renderer in renderers list
+        position = 'name'
+        for renderer in roster.renderers_list:
+            if renderer[0] == position:
+                break
+        num = roster.renderers_list.index(renderer)
+        roster.renderers_list.insert(num, client_icon_rend)
+        # fill and append column
+        roster.fill_column(col)
+        roster.tree.insert_column(col, 0)
+        # redraw roster
+        roster.columns += [GdkPixbuf.Pixbuf]
+        self.active = True
+        roster.setup_and_draw_roster()
+
+    @log_calls('ClientsIconsPlugin')
+    def connect_with_roster_draw_contact(self, roster, jid, account, contact):
+        # TODO add update icon when add contact to allowjids
+        print('contact\n'*50)
+        print(roster)
+        print(type(roster))
+        print(roster.model)
+        print(type(roster.model))
+        print(jid)
+        if jid in allowjids:
+            child_iters = roster._get_contact_iter(jid, account, contact, roster.model)
+            if not child_iters:
+                return
+            for iter_ in child_iters:
+                if roster.model[iter_][self.renderer_num] is None:
+                    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gc_icon.png")
+                    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
+                    roster.model[iter_][self.renderer_num] = pixbuf
+
 
     @log_calls('XabberGroupsPlugin')
     def _nec_message_outgoing(self, obj):
@@ -433,9 +482,8 @@ class Base(object):
 
         self.textview.tv.connect_after('size-allocate', self.resize)
 
-        self.scrolled.size_allocate(self.textview.tv.get_allocation())
-        # expand in textview doesnt work
         self.textview.tv.add(self.scrolled)
+        self.scrolled.size_allocate(self.textview.tv.get_allocation())
 
         if chat_control and room_jid in allowjids:
             self.create_buttons(chat_control)
@@ -953,7 +1001,6 @@ class Base(object):
             css = '''#messagegrid {
             background-color: #FFFFFF;}'''
             gtkgui_helpers.add_css_to_widget(widget, css)
-            widget.set_name('messagegrid')
 
     def show_xbtn_hide_othr(self):
         actions = [m for m in self.actions_hbox.get_children()]
