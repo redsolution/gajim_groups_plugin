@@ -92,7 +92,7 @@ class XabberGroupsPlugin(GajimPlugin):
         # remove old column
         roster.tree.remove_column(roster.tree.get_column(0))
         # add new renderer in renderers list
-        position = 'name'
+        position = 'avatar'
         for renderer in roster.renderers_list:
             if renderer[0] == position:
                 break
@@ -106,10 +106,10 @@ class XabberGroupsPlugin(GajimPlugin):
         self.active = True
         roster.setup_and_draw_roster()
 
+
     @log_calls('ClientsIconsPlugin')
     def connect_with_roster_draw_contact(self, roster, jid, account, contact):
         # TODO add update icon when add contact to allowjids
-        print('contact\n'*50)
         print(roster)
         print(type(roster))
         print(roster.model)
@@ -215,7 +215,8 @@ class XabberGroupsPlugin(GajimPlugin):
             print(room, myjid)
             self.userdata[room] = {}
             self.userdata[room][myjid] = userdata
-            print(self.userdata[room][myjid])
+            # self.controls[obj.account][room].remove_message_selection()
+            # doesnt work
         finally:
             return
 
