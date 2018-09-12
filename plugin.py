@@ -217,6 +217,16 @@ class XabberGroupsPlugin(GajimPlugin):
             self.userdata[room][myjid] = userdata
             # self.controls[obj.account][room].remove_message_selection()
             # doesnt work
+
+            account = None
+            accounts = app.contacts.get_accounts()
+            for acc in accounts:
+                realjid = app.get_jid_from_account(acc)
+                realjid = app.get_jid_without_resource(str(realjid))
+                if myjid == realjid:
+                    print(acc)
+                    self.controls[acc][room].remove_message_selection()
+
         finally:
             return
 
@@ -419,6 +429,9 @@ class XabberGroupsPlugin(GajimPlugin):
             self.controls[account] = {}
         self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
         self.send_ask_for_rights(chat_control, jid)
+        print(account)
+        print(jid)
+        print('connect\n'*50)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -472,7 +485,7 @@ class Base(object):
         # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
 
         self.previous_message_from = None
-
+        self.last_message_date = None
         self.current_message_id = -1
         self.chosen_messages_data = []
 
@@ -661,12 +674,14 @@ class Base(object):
                 dttoday = str(dttoday)[2:10]
                 dtdate = info_ts.split('T')[0]
                 dtdate = str(dtdate)[2:10]
+                dtd = datetime.datetime.strptime(dtdate, "%y-%m-%d")
+                dtd = dtd.strftime("%b %d")
                 dttime = info_ts.split('T')[1]
                 dttime = dttime[:8]
                 if dttoday == dtdate:
                     info_ts = dttime
                 else:
-                    info_ts = dtdate
+                    info_ts = dtd
             except:
                 info_ts = '???'
 
@@ -765,10 +780,25 @@ class Base(object):
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         nickname = None
-        user_id = None
         print(additional_data)
         print(graphics)
         print(type(graphics))
+
+        try:
+            timestamp = str(additional_data['ts'])
+            dtdate = timestamp.split('T')[0]
+            dtdate = str(dtdate)[2:10]
+            dttime = timestamp.split('T')[1]
+            dttime = dttime[:8]
+
+            if dtdate != self.last_message_date:
+                self.previous_message_from = None
+                self.last_message_date = dtdate
+                dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
+                self.print_server_info(dt.strftime("%A, %d %B, %Y"))
+
+            timestamp = dttime
+        except: timestamp = '???'
 
         SAME_FROM = False
         try:
@@ -784,8 +814,6 @@ class Base(object):
             IS_MSG = False
             self.previous_message_from = None
 
-
-
         buffer_ = self.textview.tv.get_buffer()
 
         # delete old "[time] name: "
@@ -795,19 +823,7 @@ class Base(object):
         end = buffer_.get_end_iter()
         buffer_.delete(start, end)
 
-        try:
-            timestamp = str(additional_data['ts'])
-            dttoday = datetime.date.today()
-            dttoday = str(dttoday)[2:10]
-            dtdate = timestamp.split('T')[0]
-            dtdate = str(dtdate)[2:10]
-            dttime = timestamp.split('T')[1]
-            dttime = dttime[:8]
-            if dttoday == dtdate:
-                timestamp = dttime
-            else:
-                timestamp = dtdate
-        except: timestamp = '???'
+
 
 
         if IS_MSG:
@@ -951,7 +967,7 @@ class Base(object):
         self.button_reply.set_name('Xbutton')
 
         self.button_cancel = Gtk.Button(label='CANCEL', stock=None, use_underline=False)
-        self.button_cancel.set_tooltip_text(_('resend printed messages for this user'))
+        self.button_cancel.set_tooltip_text(_('clear selection'))
         id_ = self.button_cancel.connect('clicked', self.remove_message_selection)
         chat_control.handlers[id_] = self.button_cancel
         gtkgui_helpers.add_css_to_widget(self.button_cancel, css)
@@ -1019,9 +1035,17 @@ class Base(object):
 
     def on_copytext_clicked(self, widget):
         copied_text = ''
+        date = None
         for data in self.chosen_messages_data:
+            dtdate = data[1]['ts'].split('T')[0]
+            dtdate = str(dtdate)[2:10]
+            if dtdate != date:
+                date = dtdate
+                dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
+                dt = dt.strftime("%A, %d %B, %Y")
+                copied_text += dt + '\n'
             try:
-                copied_text += '[' + data[2] + ']' + data[3] + ': ' + data[4] + '\n'
+                copied_text += '[' + data[2] + '] ' + data[3] + ':\n' + data[4] + '\n'
                 # TODO add name, badge etc. to 'me' messages
             finally:
                 copied_text += ''
