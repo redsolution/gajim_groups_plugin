@@ -224,8 +224,7 @@ class XabberGroupsPlugin(GajimPlugin):
                 realjid = app.get_jid_from_account(acc)
                 realjid = app.get_jid_without_resource(str(realjid))
                 if myjid == realjid:
-                    print(acc)
-                    self.controls[acc][room].remove_message_selection()
+                    self.controls[acc][room].on_userdata_updated(userdata)
 
         finally:
             return
@@ -475,8 +474,8 @@ class Base(object):
     def __init__(self, plugin, textview, chat_control=None):
         # recieve textview to work with
 
-        cli_jid = app.get_jid_from_account(chat_control.contact.account.name)
-        room_jid = chat_control.contact.jid
+        self.cli_jid = app.get_jid_from_account(chat_control.contact.account.name)
+        self.room_jid = chat_control.contact.jid
 
         self.plugin = plugin
         self.textview = textview
@@ -499,7 +498,7 @@ class Base(object):
         self.textview.tv.add(self.scrolled)
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
 
-        if chat_control and room_jid in allowjids:
+        if chat_control and self.room_jid in allowjids:
             self.create_buttons(chat_control)
 
     def resize(self, widget, r):
@@ -770,8 +769,7 @@ class Base(object):
         css = '''#server_info {
         padding: 8px 0px;
         font-size: 12px;
-        color: #9E9E9E;
-        font-style: italic;}'''
+        color: #9E9E9E;}'''
         gtkgui_helpers.add_css_to_widget(server_info, css)
         server_info.set_name('server_info')
         self.box.pack_start(server_info, False, False, 0)
@@ -910,10 +908,31 @@ class Base(object):
         else:
             self.show_xbtn_hide_othr()
 
-    def create_buttons(self, chat_control):
-        self.actions_hbox = chat_control.xml.get_object('hbox')
+    def on_userdata_updated(self, userdata = None):
+        self.show_xbtn_hide_othr()
+        self.remove_message_selection()
+        try:
+            path = os.path.normpath(AVATARS_DIR + '/' + userdata['av_id'] + '.jpg')
+            file = open(path)
+            file = os.path.normpath(path)
+            av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 48, 48, False)
+            av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
 
-        #childs = self.actions_hbox.get_children()
+            # TODO update avatar
+
+        except:
+            return
+
+    def create_buttons(self, chat_control):
+        self.chat_control = chat_control
+        self.actions_hbox = chat_control.xml.get_object('hbox')
+        # very dangerous because of position can be changed
+        self.text_editor = self.actions_hbox.get_children()[2]
+
+        self.user_avatar = Gtk.EventBox()
+        av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
+        av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
+        self.user_avatar.add(av_image)
 
 
         css = '''#Xbutton {
@@ -983,10 +1002,10 @@ class Base(object):
         self.buttongrid.attach(self.button_reply, 1, 0, 1, 1)
         self.buttongrid.attach(self.button_copy, 2, 0, 1, 1)
         self.buttongrid.attach(self.button_cancel, 4, 0, 1, 1)
-        self.actions_hbox.add(self.buttongrid)
-        self.buttongrid.show()
         self.actions_hbox.pack_start(self.buttongrid, True, True, 0)
         self.actions_hbox.reorder_child(self.buttongrid, 0)
+        self.actions_hbox.pack_start(self.user_avatar, False, False, 0)
+        self.actions_hbox.reorder_child(self.user_avatar, 0)
 
         self.actions_hbox.connect_after('size-allocate', self.resize_actions)
         self.button_copy.set_size_request(95, 35)
@@ -994,16 +1013,6 @@ class Base(object):
         self.button_reply.set_size_request(95, 35)
         self.button_cancel.set_size_request(95, 35)
 
-        #self.actions_hbox.pack_start(self.button_copy, False, False, 0)
-        #self.actions_hbox.pack_start(self.button_forward, False, False, 0)
-        #self.actions_hbox.pack_start(self.button_reply, False, False, 0)
-
-        #self.actions_hbox.reorder_child(self.button_copy, len(self.actions_hbox.get_children()) - 4)
-        #self.actions_hbox.reorder_child(self.button_forward, len(self.actions_hbox.get_children()) - 3)
-        #self.actions_hbox.reorder_child(self.button_reply, len(self.actions_hbox.get_children()) - 2)
-
-        # info about acts which was visible before tap message
-        self.was_wisible_acts = []
         self.show_othr_hide_xbtn()
 
     def resize_actions(self, widget, r):
@@ -1020,16 +1029,27 @@ class Base(object):
             gtkgui_helpers.add_css_to_widget(widget, css)
 
     def show_xbtn_hide_othr(self):
-        actions = [m for m in self.actions_hbox.get_children()]
-        for act in actions:
-            if act.get_visible():
-                self.was_wisible_acts.append(act)
-            act.set_visible(False)
+        settings_menu = self.chat_control.xml.get_object('settings_menu')
+        encryption_menu = self.chat_control.xml.get_object('encryption_menu')
+        emoticons_button = self.chat_control.xml.get_object('emoticons_button')
+        sendfile_button = self.chat_control.xml.get_object('sendfile_button')
+        formattings_button = self.chat_control.xml.get_object('formattings_button')
+        settings_menu.hide()
+        encryption_menu.hide()
+        emoticons_button.hide()
+        sendfile_button.hide()
+        formattings_button.hide()
+        self.text_editor.hide()
+        self.user_avatar.hide()
         self.buttongrid.show()
 
     def show_othr_hide_xbtn(self):
-        for act in self.was_wisible_acts:
-            act.set_visible(True)
+        emoticons_button = self.chat_control.xml.get_object('emoticons_button')
+        sendfile_button = self.chat_control.xml.get_object('sendfile_button')
+        emoticons_button.show()
+        sendfile_button.show()
+        self.text_editor.show()
+        self.user_avatar.show()
         self.buttongrid.hide()
 
 
@@ -1046,7 +1066,6 @@ class Base(object):
                 copied_text += dt + '\n'
             try:
                 copied_text += '[' + data[2] + '] ' + data[3] + ':\n' + data[4] + '\n'
-                # TODO add name, badge etc. to 'me' messages
             finally:
                 copied_text += ''
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
