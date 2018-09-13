@@ -15,8 +15,10 @@ from gajim.common import app
 from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
-import base64, os
+import base64
+import os
 import datetime
+import hashlib
 
 # namespaces & logger
 log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
@@ -125,7 +127,6 @@ class XabberGroupsPlugin(GajimPlugin):
                     pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
                     roster.model[iter_][self.renderer_num] = pixbuf
 
-
     @log_calls('XabberGroupsPlugin')
     def _nec_message_outgoing(self, obj):
         to_jid = obj.jid
@@ -169,7 +170,6 @@ class XabberGroupsPlugin(GajimPlugin):
         stanza_send.getTag('query').setAttr('id', str(id))
         app.connections[chat_control.account].connection.send(stanza_send, now=True)
 
-
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
         # decode base, return realpath
@@ -187,6 +187,19 @@ class XabberGroupsPlugin(GajimPlugin):
         return(realfilename)
 
     @log_calls('XabberGroupsPlugin')
+    def img_to_base64(self, filename):
+        # encode image to base64, return base and hash
+        # or return False if error
+        try:
+            with open(filename, "rb") as f:
+                encoded_string = base64.b64encode(f.read())
+                a = (encoded_string.decode("utf-8"))
+                b = (hashlib.sha1(encoded_string).hexdigest())
+                return a, b
+        except:
+            return False, filename
+
+    @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
         try:
             # check is iq from xabber gc
@@ -202,7 +215,7 @@ class XabberGroupsPlugin(GajimPlugin):
             jid = item.getTag('jid').getData()
             badge = item.getTag('badge').getData()
             nickname = item.getTag('nickname').getData()
-            av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getData()
+            av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
             userdata = {'id': id,
                         'jid': jid,
                         'badge': badge,
@@ -424,13 +437,10 @@ class XabberGroupsPlugin(GajimPlugin):
         account = chat_control.contact.account.name
         jid = chat_control.contact.jid
         #if jid in allowjids:  # ask for rights if xgc if open chat control
-        if account not in self.controls and jid in allowjids:
+        if account not in self.controls:
             self.controls[account] = {}
         self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
         self.send_ask_for_rights(chat_control, jid)
-        print(account)
-        print(jid)
-        print('connect\n'*50)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -480,7 +490,7 @@ class Base(object):
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
-        self.default_avatar = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.jpg")
+        self.default_avatar = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
         # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
 
         self.previous_message_from = None
@@ -909,19 +919,34 @@ class Base(object):
             self.show_xbtn_hide_othr()
 
     def on_userdata_updated(self, userdata = None):
+        print(userdata)
+        print(userdata)
+        print(userdata)
+        print(userdata)
+        print(userdata)
+        print(userdata)
+        print(userdata)
+        print(userdata)
+        print(userdata)
         self.show_xbtn_hide_othr()
         self.remove_message_selection()
-        try:
-            path = os.path.normpath(AVATARS_DIR + '/' + userdata['av_id'] + '.jpg')
-            file = open(path)
-            file = os.path.normpath(path)
-            av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 48, 48, False)
-            av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
+        if userdata:
+            try:
+                path = os.path.normpath(AVATARS_DIR + '/' + userdata['av_id'] + '.jpg')
+                file = open(path)
+                file = os.path.normpath(path)
+                av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 48, 48, False)
+                av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
 
-            # TODO update avatar
+                # update avatar
+                for child in self.user_avatar.get_children():
+                    self.user_avatar.remove(child)
+                self.user_avatar.add(av_image)
+                av_image.show()
+                self.user_avatar.show()
 
-        except:
-            return
+            except:
+                return
 
     def create_buttons(self, chat_control):
         self.chat_control = chat_control
@@ -1013,7 +1038,8 @@ class Base(object):
         self.button_reply.set_size_request(95, 35)
         self.button_cancel.set_size_request(95, 35)
 
-        self.show_othr_hide_xbtn()
+        self.show_xbtn_hide_othr()
+        self.remove_message_selection()
 
     def resize_actions(self, widget, r):
         self.button_cancel.set_property("margin-left", r.width - 420)
