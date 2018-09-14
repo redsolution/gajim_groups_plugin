@@ -12,6 +12,7 @@ from gajim import dialogs
 from gajim import gtkgui_helpers
 from gajim.common import ged
 from gajim.common import app
+from gajim.common import configpaths
 from gajim.common import connection
 from gajim.plugins import GajimPlugin
 from gajim.plugins.helpers import log_calls
@@ -25,10 +26,7 @@ log = logging.getLogger('gajim.plugin_system.XabberGroupsPlugin')
 XABBER_GC = 'http://xabber.com/protocol/groupchat'
 XABBER_GC_invite = 'http://xabber.com/protocol/groupchat#invite'
 
-# import tempfile
-# dir = tempfile.gettempdir() + '/xabavatars'
-dir = os.environ['HOME'] + '/xabavatars'
-AVATARS_DIR = os.path.normpath(dir)
+AVATARS_DIR = os.path.join(configpaths.get('MY_CACHE'), 'xabavatars')
 try:
     os.stat(AVATARS_DIR)
 except:
@@ -159,6 +157,25 @@ class XabberGroupsPlugin(GajimPlugin):
             self.controls[account][jid].print_real_text(obj)
 
     @log_calls('XabberGroupsPlugin')
+    def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid):
+        u_id = self.userdata[to_jid][from_jid]['id']
+        account = None
+        accounts = app.contacts.get_accounts()
+        for acc in accounts:
+            realjid = app.get_jid_from_account(acc)
+            realjid = app.get_jid_without_resource(str(realjid))
+            if from_jid == realjid:
+                account = acc
+        stanza_send = nbxmpp.Iq(to=to_jid, typ='set', frm=from_jid)
+        stanza_send.setAttr('id', 'xgcPublish1')
+        stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
+        stanza_send.getTag('pubsub').setTagAttr('publish', 'node', 'urn:xmpp:avatar:data#'+u_id)
+        stanza_send.getTag('pubsub').getTag('publish').setTagAttr('item', 'id', hash)
+        stanza_send.getTag('pubsub').getTag('publish').getTag('item').setTag('data').setNamespace('urn:xmpp:avatar:data')
+        stanza_send.getTag('pubsub').getTag('publish').getTag('item').getTag('data').setData(avatar_data)
+        app.connections[account].connection.send(stanza_send, now=True)
+
+    @log_calls('XabberGroupsPlugin')
     def send_ask_for_rights(self, chat_control, to_jid, id=''):
         print(to_jid)
         print(chat_control.contact.name)
@@ -201,21 +218,45 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def _nec_iq_received(self, obj):
-        try:
+        try: on_avatar_data_get = obj.stanza.getTag('pubsub').getTag('items').getTag('item').getTag('data',
+                                                                                    namespace='urn:xmpp:avatar:data')
+        except: on_avatar_data_get = False
+        try: on_userdata_get = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
+        except: on_userdata_get = False
+        try: on_uploading_avatar_response = (obj.stanza.getAttr('id') == 'xgcPublish1')
+        except: on_uploading_avatar_response = False
+        try: on_publish_response = (obj.stanza.getAttr('id') == 'xgcPublish2')
+        except: on_publish_response = False
+
+        if on_avatar_data_get:
             # check is iq from xabber gc
             item = obj.stanza.getTag('pubsub').getTag('items').getTag('item')
             base64avatar = item.getTag('data', namespace='urn:xmpp:avatar:data').getData()
             id = item.getAttr('id')
             avatar_loc = self.base64_to_image(base64avatar, id)
             print(avatar_loc)
-        except:
+            if obj.stanza.getAttr('id') == 'xgcUserAvData1':
+                room = obj.stanza.getAttr('from')
+                myjid = obj.stanza.getAttr('to')
+                myjid = app.get_jid_without_resource(str(myjid))
+                accounts = app.contacts.get_accounts()
+                for acc in accounts:
+                    realjid = app.get_jid_from_account(acc)
+                    realjid = app.get_jid_without_resource(str(realjid))
+                    if myjid == realjid:
+                        self.controls[acc][room].update_user_avatar(id)
+                        return
+
+        if on_userdata_get:
             # check is iq = groupchat userdata from xabber gc
             item = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
             id = item.getTag('id').getData()
             jid = item.getTag('jid').getData()
             badge = item.getTag('badge').getData()
             nickname = item.getTag('nickname').getData()
-            av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
+            try:
+                av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
+            except: av_id = ''
             userdata = {'id': id,
                         'jid': jid,
                         'badge': badge,
@@ -231,7 +272,6 @@ class XabberGroupsPlugin(GajimPlugin):
             # self.controls[obj.account][room].remove_message_selection()
             # doesnt work
 
-            account = None
             accounts = app.contacts.get_accounts()
             for acc in accounts:
                 realjid = app.get_jid_from_account(acc)
@@ -239,8 +279,55 @@ class XabberGroupsPlugin(GajimPlugin):
                 if myjid == realjid:
                     self.controls[acc][room].on_userdata_updated(userdata)
 
-        finally:
-            return
+        if on_uploading_avatar_response:
+            # check is iq = response from xgc about uploading avatar
+            item = obj.stanza.getTag('pubsub', namespace='http://jabber.org/protocol/pubsub')
+            room = obj.stanza.getAttr('from')
+            myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
+            u_id = item.getTag('publish').getAttr('node').split('#')[1]
+            av_id = item.getTag('publish').getTag('item').getAttr('id')
+
+            stanza_send = nbxmpp.Iq(to=room, frm=myjid, typ='set')
+            stanza_send.setAttr('id', 'xgcPublish2')
+            stanza_send.setTag('pubsub', namespace='http://jabber.org/protocol/pubsub')
+            stanza_send.getTag('pubsub').setTagAttr('publish', 'node', 'urn:xmpp:avatar:metadata#' + u_id)
+            stanza_send.getTag('pubsub').getTag('publish').setTagAttr('item', 'id', av_id)
+            new_item = stanza_send.getTag('pubsub').getTag('publish').getTag('item')
+            new_item.setTag('metadata', namespace='urn:xmpp:avatar:metadata')
+            new_item.getTag('metadata').setTag('info')
+            new_info = stanza_send.getTag('pubsub').getTag('publish').getTag('item').getTag('metadata').getTag('info')
+            new_info.setAttr('bytes', '12345')
+            new_info.setAttr('id', av_id)
+            new_info.setAttr('height', '64')
+            new_info.setAttr('width', '64')
+            new_info.setAttr('type', 'image/jpeg')
+
+            account = None
+            accounts = app.contacts.get_accounts()
+            for acc in accounts:
+                realjid = app.get_jid_from_account(acc)
+                realjid = app.get_jid_without_resource(str(realjid))
+                if myjid == realjid:
+                    account = acc
+            app.connections[account].connection.send(stanza_send, now=True)
+
+        if on_publish_response:
+            print('publish responsed!!!\n'*50)
+            item = obj.stanza.getTag('pubsub', namespace='http://jabber.org/protocol/pubsub')
+            room = obj.stanza.getAttr('from')
+            myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
+            u_id = item.getTag('publish').getAttr('node').split('#')[1]
+            av_id = item.getTag('publish').getTag('item').getAttr('id')
+            self.userdata[room][myjid]['av_id'] = av_id
+            accounts = app.contacts.get_accounts()
+            for acc in accounts:
+                realjid = app.get_jid_from_account(acc)
+                realjid = app.get_jid_without_resource(str(realjid))
+                if myjid == realjid:
+                    # return dir or send stanza call for avatar and return False
+                    isexist = self.send_call_single_avatar(acc, room, u_id, av_id, 'xgcUserAvData1')
+                    if isexist:
+                        self.controls[acc][room].update_user_avatar(av_id)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -417,30 +504,39 @@ class XabberGroupsPlugin(GajimPlugin):
             self.send_call_single_avatar(account, room, userid, id)
 
     @log_calls('XabberGroupsPlugin')
-    def send_call_single_avatar(self, account, room_jid, u_id, av_id):
-
+    def send_call_single_avatar(self, account, room_jid, u_id, av_id, stanza_id=''):
         try:
             # error if avatar is not exist
             dir = AVATARS_DIR + '/' + av_id + '.jpg'
             k = open(os.path.normpath(dir))
+            return True
         except:
             stanza_send = nbxmpp.Iq(to=room_jid, typ='get')
-            stanza_send.setAttr('id', str(av_id))
+            stanza_send.setAttr('id', stanza_id)
             stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
             stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+str(u_id)))
             stanza_send.getTag('pubsub').getTag('items').setTagAttr('item', 'id', str(av_id))
             app.connections[account].connection.send(stanza_send, now=True)
+            return False
 
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
         account = chat_control.contact.account.name
-        jid = chat_control.contact.jid
-        #if jid in allowjids:  # ask for rights if xgc if open chat control
+        room = chat_control.contact.jid
+        acc_jid = app.get_jid_from_account(account)
+        # if jid in allowjids:  # ask for rights if xgc if open chat control
         if account not in self.controls:
             self.controls[account] = {}
-        self.controls[account][jid] = Base(self, chat_control.conv_textview, chat_control)
-        self.send_ask_for_rights(chat_control, jid)
+        self.controls[account][room] = Base(self, chat_control.conv_textview, chat_control)
+
+        # check if user data is already exist
+        # if its not, ask for user data
+        try:
+            is_data_exist = self.userdata[room][acc_jid]['av_id']
+            self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
+        except:
+            self.send_ask_for_rights(chat_control, room)
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -448,19 +544,6 @@ class XabberGroupsPlugin(GajimPlugin):
         jid = chat_control.contact.jid
         self.controls[account][jid].deinit_handlers()
         del self.controls[account][jid]
-
-    @log_calls('XabberGroupsPlugin')
-    def connect_with_history(self, history_window):
-        if self.history_window_control:
-            self.history_window_control.deinit_handlers()
-        self.history_window_control = Base(
-            self, history_window.history_textview)
-
-    @log_calls('XabberGroupsPlugin')
-    def disconnect_from_history(self, history_window):
-        if self.history_window_control:
-            self.history_window_control.deinit_handlers()
-        self.history_window_control = None
 
     @log_calls('XabberGroupsPlugin')
     def print_real_text(self, tv, real_text, text_tags, graphics,
@@ -481,15 +564,15 @@ class XabberGroupsPlugin(GajimPlugin):
 
 class Base(object):
 
-    def __init__(self, plugin, textview, chat_control=None):
+    def __init__(self, plugin, textview, chat_control):
         # recieve textview to work with
-
         self.cli_jid = app.get_jid_from_account(chat_control.contact.account.name)
         self.room_jid = chat_control.contact.jid
 
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
+        self.chat_control = chat_control
         self.default_avatar = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
         # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
 
@@ -508,10 +591,11 @@ class Base(object):
         self.textview.tv.add(self.scrolled)
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
 
-        if chat_control and self.room_jid in allowjids:
-            self.create_buttons(chat_control)
+        if self.room_jid in allowjids:
+            self.create_buttons(self.chat_control)
 
     def resize(self, widget, r):
+        self.normalize_action_hbox()
         self.scrolled.set_size_request(r.width, r.height)
         messages = [m for m in self.box.get_children()]
         for i in messages:
@@ -519,8 +603,6 @@ class Base(object):
                 j = i.get_children()
                 j[2].set_size_request(r.width - (64+95), -1)
             except: pass
-
-        print(self.actions_hbox.get_children())
 
     def do_resize(self, messagebox):
         w = self.textview.tv.get_allocated_width()
@@ -843,6 +925,7 @@ class Base(object):
 
 
     def on_avatar_press_event(self, eb, event, additional_data):
+        # TODO EDIT GTK.MESSAGE DIALOG FOR AVATARS
         def on_ok():
             return
 
@@ -870,6 +953,25 @@ class Base(object):
         # right klick
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             return
+
+    def on_self_avatar_press_event(self, eb, event):
+        dialog = Gtk.FileChooserDialog(_('Choose an avatar'), None,
+                                       Gtk.FileChooserAction.OPEN,
+                                       (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                                        Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
+        filter_text = Gtk.FileFilter()
+        filter_text.set_name("jpeg avatar")
+        filter_text.add_mime_type("image/jpeg")
+        dialog.add_filter(filter_text)
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            print("Open clicked")
+            avatar_base, av_hash = self.plugin.img_to_base64(dialog.get_filename())
+            # send avatar base64
+            self.plugin.send_publish_avatar_data(avatar_base, av_hash, self.room_jid, self.cli_jid)
+        elif response == Gtk.ResponseType.CANCEL:
+            print("Cancel clicked")
+        dialog.destroy()
 
     # Change mouse pointer to HAND2 when
     # mouse enter the eventbox with the image
@@ -919,46 +1021,36 @@ class Base(object):
             self.show_xbtn_hide_othr()
 
     def on_userdata_updated(self, userdata = None):
-        print(userdata)
-        print(userdata)
-        print(userdata)
-        print(userdata)
-        print(userdata)
-        print(userdata)
-        print(userdata)
-        print(userdata)
-        print(userdata)
         self.show_xbtn_hide_othr()
         self.remove_message_selection()
         if userdata:
-            try:
-                path = os.path.normpath(AVATARS_DIR + '/' + userdata['av_id'] + '.jpg')
-                file = open(path)
-                file = os.path.normpath(path)
-                av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 48, 48, False)
-                av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
+            self.update_user_avatar(userdata['av_id'])
 
-                # update avatar
-                for child in self.user_avatar.get_children():
-                    self.user_avatar.remove(child)
-                self.user_avatar.add(av_image)
-                av_image.show()
-                self.user_avatar.show()
+    def update_user_avatar(self, av_id):
+        try:
+            path = os.path.normpath(AVATARS_DIR + '/' + av_id + '.jpg')
+            file = open(path)
+            file = os.path.normpath(path)
+            css = '''        
+            #XCAvatar {
+            padding: 0px 8px;
+            }'''
+            av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 48, 48, False)
+            av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
+            gtkgui_helpers.add_css_to_widget(av_image, css)
+            av_image.set_name('XCAvatar')
 
-            except:
-                return
+            # update avatar
+            for child in self.user_avatar.get_children():
+                self.user_avatar.remove(child)
+            self.user_avatar.add(av_image)
+            av_image.show()
+            self.user_avatar.show()
+        except:
+            return
 
     def create_buttons(self, chat_control):
-        self.chat_control = chat_control
         self.actions_hbox = chat_control.xml.get_object('hbox')
-        # very dangerous because of position can be changed
-        self.text_editor = self.actions_hbox.get_children()[2]
-
-        self.user_avatar = Gtk.EventBox()
-        av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
-        av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
-        self.user_avatar.add(av_image)
-
 
         css = '''#Xbutton {
         margin: 0 5px;
@@ -985,7 +1077,28 @@ class Base(object):
         background-color: #E0E0E0;
         background: #E0E0E0;
         }
+        #XCAvatar {
+        padding: 0px 8px;
+        }
+        #GCTextEditor{
+        border-bottom: 2px solid #D32F2F;
+        }
         '''
+
+        # very dangerous because of position can be changed
+        self.text_editor = self.actions_hbox.get_children()[2]
+        gtkgui_helpers.add_css_to_widget(self.text_editor, css)
+        self.text_editor.set_name('GCTextEditor')
+
+        self.user_avatar = Gtk.EventBox()
+        self.user_avatar.connect('button-press-event', self.on_self_avatar_press_event)
+        av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
+        av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
+        gtkgui_helpers.add_css_to_widget(av_image, css)
+        av_image.set_name('XCAvatar')
+        self.user_avatar.add(av_image)
+
+
 
 
         # buttons configs
@@ -1038,8 +1151,10 @@ class Base(object):
         self.button_reply.set_size_request(95, 35)
         self.button_cancel.set_size_request(95, 35)
 
-        self.show_xbtn_hide_othr()
-        self.remove_message_selection()
+        # clear? seems like it doesn't work!
+        self.hide_all_actions()
+        self.normalize_action_hbox()
+
 
     def resize_actions(self, widget, r):
         self.button_cancel.set_property("margin-left", r.width - 420)
@@ -1054,17 +1169,46 @@ class Base(object):
             background-color: #FFFFFF;}'''
             gtkgui_helpers.add_css_to_widget(widget, css)
 
-    def show_xbtn_hide_othr(self):
+    def normalize_action_hbox(self):
         settings_menu = self.chat_control.xml.get_object('settings_menu')
         encryption_menu = self.chat_control.xml.get_object('encryption_menu')
-        emoticons_button = self.chat_control.xml.get_object('emoticons_button')
-        sendfile_button = self.chat_control.xml.get_object('sendfile_button')
         formattings_button = self.chat_control.xml.get_object('formattings_button')
         settings_menu.hide()
         encryption_menu.hide()
+        formattings_button.hide()
+
+        if self.chosen_messages_data == []:
+            self.show_othr_hide_xbtn()
+        else:
+            self.show_xbtn_hide_othr()
+
+    def hide_all_actions(self):
+        settings_menu = self.chat_control.xml.get_object('settings_menu')
+        encryption_menu = self.chat_control.xml.get_object('encryption_menu')
+        formattings_button = self.chat_control.xml.get_object('formattings_button')
+        settings_menu.hide()
+        encryption_menu.hide()
+        formattings_button.hide()
+        emoticons_button = self.chat_control.xml.get_object('emoticons_button')
+        sendfile_button = self.chat_control.xml.get_object('sendfile_button')
         emoticons_button.hide()
         sendfile_button.hide()
+        self.text_editor.hide()
+        self.user_avatar.hide()
+        self.buttongrid.hide()
+
+    def show_xbtn_hide_othr(self):
+        settings_menu = self.chat_control.xml.get_object('settings_menu')
+        encryption_menu = self.chat_control.xml.get_object('encryption_menu')
+        formattings_button = self.chat_control.xml.get_object('formattings_button')
+        settings_menu.hide()
+        encryption_menu.hide()
         formattings_button.hide()
+
+        emoticons_button = self.chat_control.xml.get_object('emoticons_button')
+        sendfile_button = self.chat_control.xml.get_object('sendfile_button')
+        emoticons_button.hide()
+        sendfile_button.hide()
         self.text_editor.hide()
         self.user_avatar.hide()
         self.buttongrid.show()
@@ -1077,7 +1221,6 @@ class Base(object):
         self.text_editor.show()
         self.user_avatar.show()
         self.buttongrid.hide()
-
 
     def on_copytext_clicked(self, widget):
         copied_text = ''
