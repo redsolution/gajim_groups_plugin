@@ -7,6 +7,7 @@ class UserDataDialog(Gtk.Dialog):
 
     def __init__(self, plugin, userdata, image, chat_control):
 
+        self.self_userdata = plugin.userdata[chat_control.room_jid][chat_control.cli_jid]
 
         nickname_text = userdata['nickname']
         badge_text = userdata['badge']
@@ -15,9 +16,11 @@ class UserDataDialog(Gtk.Dialog):
         else: user_id = userdata['jid']
 
         Gtk.Dialog.__init__(self, nickname_text, None, 0)
+
         self.add_button('save', 1)
 
         self.set_default_size(480, 480)
+        self.rights = {}
 
         header_grid = Gtk.Grid()
         avatar = Gtk.EventBox()
@@ -26,7 +29,6 @@ class UserDataDialog(Gtk.Dialog):
         avatar.set_margin_left(20)
         avatar.set_margin_right(20)
         avatar.set_margin_top(10)
-        avatar.set_margin_bottom(10)
         avatar.set_size_request(40, 40)
 
         nickname = Gtk.TextView()
@@ -45,7 +47,6 @@ class UserDataDialog(Gtk.Dialog):
 
         jid_id = Gtk.TextView()
         jid_id.get_buffer().set_text(user_id)
-        jid_id.set_margin_bottom(10)
         jid_id_grid = Gtk.Grid()
         jid_id_grid.add(jid_id)
 
@@ -62,8 +63,10 @@ class UserDataDialog(Gtk.Dialog):
         # scrolled.add(listbox)
 
         def addrow(name, state, expires='Not able'):
+            self.rights[name] = state
 
             text = name
+            text = text.capitalize().replace('-', ' ')
             row = Gtk.ListBoxRow()
             hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=50)
             hbox.set_margin_left(20)
@@ -88,7 +91,9 @@ class UserDataDialog(Gtk.Dialog):
 
         # welcome to india, lets dance!
         # India ens, sorry but that was fun :)
-        listbox.add(Gtk.Label('Restrictions'))
+        RestLabel = Gtk.Label('Restrictions')
+        RestLabel.set_margin_top(20)
+        listbox.add(RestLabel)
         res = userdata['rights']['restrictions']
 
         for i in ['read', 'send-audio', 'send-image', 'write']:
@@ -97,7 +102,9 @@ class UserDataDialog(Gtk.Dialog):
             else:
                 listbox.add(addrow(i, False))
 
-        listbox.add(Gtk.Label('Permissions'))
+        PermLabel = Gtk.Label('Permissions')
+        PermLabel.set_margin_top(20)
+        listbox.add(PermLabel)
         res = userdata['rights']['permissions']
 
         for i in ['owner', 'block-member', 'change-badge', 'change-chat',
@@ -106,6 +113,9 @@ class UserDataDialog(Gtk.Dialog):
                 listbox.add(addrow(i, True, res[i][0]))
             else:
                 listbox.add(addrow(i, False))
+
+        for i in self.rights:
+            print(i, self.rights[i])
 
 
 
