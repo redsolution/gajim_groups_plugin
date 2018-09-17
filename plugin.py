@@ -5,7 +5,7 @@ import nbxmpp
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango
-
+from groups_plugin.plugin_dialogs import UserDataDialog
 from nbxmpp import simplexml
 from nbxmpp.protocol import JID
 from gajim import dialogs
@@ -68,7 +68,8 @@ class XabberGroupsPlugin(GajimPlugin):
         self.events_handlers = {
             'decrypted-message-received': (ged.OUT_POSTGUI1, self._nec_decrypted_message_received),
             'raw-iq-received': (ged.OUT_PRECORE, self._nec_iq_received),
-            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing)
+            'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing),
+            'presence-received': (ged.POSTGUI, self.presence_received)
         }
         self.gui_extension_points = {
             'chat_control_base': (self.connect_with_chat_control,
@@ -108,6 +109,22 @@ class XabberGroupsPlugin(GajimPlugin):
 
 
     @log_calls('ClientsIconsPlugin')
+    def presence_received(self, obj):
+        roster = app.interface.roster
+        contact = app.contacts.get_contact_with_highest_priority(obj.conn.name, obj.jid)
+        iters = roster._get_contact_iter(obj.jid, obj.conn.name, contact, roster.model)
+        iter_ = iters[0]
+        is_group = obj.stanza.getTag('x', namespace=XABBER_GC)
+        if is_group:
+            addallowjid(obj.jid)
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gc_icon.png")
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
+            image = Gtk.Image()
+            image.show()
+            image.set_from_pixbuf(pixbuf)
+            roster.model[iter_][0] = image
+
+    @log_calls('ClientsIconsPlugin')
     def connect_with_roster_draw_contact(self, roster, jid, account, contact):
         # TODO add update icon when add contact to allowjids
         print(roster)
@@ -120,10 +137,10 @@ class XabberGroupsPlugin(GajimPlugin):
             if not child_iters:
                 return
             for iter_ in child_iters:
-                if roster.model[iter_][self.renderer_num] is None:
-                    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gc_icon.png")
-                    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
-                    roster.model[iter_][self.renderer_num] = pixbuf
+                icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gc_icon.png")
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
+                image = Gtk.Image.new_from_pixbuf(pixbuf)
+                roster.model[iter_][0] = image
 
     @log_calls('XabberGroupsPlugin')
     def _nec_message_outgoing(self, obj):
@@ -157,8 +174,9 @@ class XabberGroupsPlugin(GajimPlugin):
             self.controls[account][jid].print_real_text(obj)
 
     @log_calls('XabberGroupsPlugin')
-    def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid):
-        u_id = self.userdata[to_jid][from_jid]['id']
+    def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid, u_id = None):
+        if not u_id:
+            u_id = self.userdata[to_jid][from_jid]['id']
         account = None
         accounts = app.contacts.get_accounts()
         for acc in accounts:
@@ -176,13 +194,13 @@ class XabberGroupsPlugin(GajimPlugin):
         app.connections[account].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
-    def send_ask_for_rights(self, chat_control, to_jid, id=''):
+    def send_ask_for_rights(self, chat_control, to_jid, id='', type=''):
         print(to_jid)
         print(chat_control.contact.name)
         print(chat_control.contact)
         print(chat_control.contact.jid)
         stanza_send = nbxmpp.Iq(to=to_jid, typ='get')
-        stanza_send.setAttr('id', str(id))
+        stanza_send.setAttr('id', type)
         stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
         stanza_send.getTag('query').setAttr('id', str(id))
         app.connections[chat_control.account].connection.send(stanza_send, now=True)
@@ -248,36 +266,97 @@ class XabberGroupsPlugin(GajimPlugin):
                         return
 
         if on_userdata_get:
-            # check is iq = groupchat userdata from xabber gc
-            item = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
-            id = item.getTag('id').getData()
-            jid = item.getTag('jid').getData()
-            badge = item.getTag('badge').getData()
-            nickname = item.getTag('nickname').getData()
-            try:
-                av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
-            except: av_id = ''
-            userdata = {'id': id,
-                        'jid': jid,
-                        'badge': badge,
-                        'nickname': nickname,
-                        'av_id': av_id}
-            print('data\n'*10)
-            room = obj.stanza.getAttr('from')
-            myjid = obj.stanza.getAttr('to')
-            myjid = app.get_jid_without_resource(str(myjid))
-            print(room, myjid)
-            self.userdata[room] = {}
-            self.userdata[room][myjid] = userdata
-            # self.controls[obj.account][room].remove_message_selection()
-            # doesnt work
+            if obj.stanza.getAttr('id') == 'XGCUserdata':
+                # check is iq = groupchat userdata from xabber gc
+                item = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
+                id = item.getTag('id').getData()
+                jid = item.getTag('jid').getData()
+                badge = item.getTag('badge').getData()
+                nickname = item.getTag('nickname').getData()
+                try:
+                    av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
+                except: av_id = ''
+                # rights
+                i = item.getTags('restriction')
+                restriction = []
+                for k in i:
+                    restriction.append([k.getAttr('name'), k.getAttr('expires'),
+                                        k.getAttr('issued-by'), k.getAttr('issued-at')])
+                i = item.getTags('permission')
+                permission = []
+                for k in i:
+                    permission.append([k.getAttr('name'), k.getAttr('expires'),
+                                       k.getAttr('issued-by'), k.getAttr('issued-at')])
+                user_rights = {'restrictions': restriction,
+                               'permissions': permission}
+                userdata = {'id': id,
+                            'jid': jid,
+                            'badge': badge,
+                            'nickname': nickname,
+                            'av_id': av_id,
+                            'rights': user_rights}
+                print('data\n'*10)
+                room = obj.stanza.getAttr('from')
+                myjid = obj.stanza.getAttr('to')
+                myjid = app.get_jid_without_resource(str(myjid))
+                print(room, myjid)
+                self.userdata[room] = {}
+                self.userdata[room][myjid] = userdata
+                # self.controls[obj.account][room].remove_message_selection()
+                # doesnt work
 
-            accounts = app.contacts.get_accounts()
-            for acc in accounts:
-                realjid = app.get_jid_from_account(acc)
-                realjid = app.get_jid_without_resource(str(realjid))
-                if myjid == realjid:
-                    self.controls[acc][room].on_userdata_updated(userdata)
+                accounts = app.contacts.get_accounts()
+                for acc in accounts:
+                    realjid = app.get_jid_from_account(acc)
+                    realjid = app.get_jid_without_resource(str(realjid))
+                    if myjid == realjid:
+                        self.controls[acc][room].on_userdata_updated(userdata)
+
+            if obj.stanza.getAttr('id') == 'XGCUserOptions':
+                item = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
+                id = item.getTag('id').getData()
+                try: jid = item.getTag('jid').getData()
+                except: jid = 'Unknown'
+                badge = item.getTag('badge').getData()
+                nickname = item.getTag('nickname').getData()
+                try:
+                    av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
+                    avatar_loc = os.path.normpath(AVATARS_DIR + '/' + av_id + '.jpg')
+                except:
+                    av_id = ''
+                    avatar_loc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(avatar_loc, 40, 40, False)
+                image = Gtk.Image.new_from_pixbuf(pixbuf)
+                # rights
+                i = item.getTags('restriction')
+                restriction = {}
+                for k in i:
+                    restriction[k.getAttr('name')] = [k.getAttr('expires'),
+                                                      k.getAttr('issued-by'),
+                                                      k.getAttr('issued-at')]
+                i = item.getTags('permission')
+                permission = {}
+                for k in i:
+                    permission[k.getAttr('name')] = [k.getAttr('expires'),
+                                                     k.getAttr('issued-by'),
+                                                     k.getAttr('issued-at')]
+                user_rights = {'restrictions': restriction,
+                               'permissions': permission}
+                userdata = {'id': id,
+                            'jid': jid,
+                            'badge': badge,
+                            'nickname': nickname,
+                            'av_id': av_id,
+                            'rights': user_rights}
+
+                room = obj.stanza.getAttr('from')
+                myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
+                for acc in app.contacts.get_accounts():
+                    realjid = app.get_jid_from_account(acc)
+                    realjid = app.get_jid_without_resource(str(realjid))
+                    if myjid == realjid:
+                        dialog = UserDataDialog(self, userdata, image, self.controls[acc][room])
+                        response = dialog.popup()
 
         if on_uploading_avatar_response:
             # check is iq = response from xgc about uploading avatar
@@ -318,16 +397,18 @@ class XabberGroupsPlugin(GajimPlugin):
             myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
             u_id = item.getTag('publish').getAttr('node').split('#')[1]
             av_id = item.getTag('publish').getTag('item').getAttr('id')
-            self.userdata[room][myjid]['av_id'] = av_id
-            accounts = app.contacts.get_accounts()
-            for acc in accounts:
-                realjid = app.get_jid_from_account(acc)
-                realjid = app.get_jid_without_resource(str(realjid))
-                if myjid == realjid:
-                    # return dir or send stanza call for avatar and return False
-                    isexist = self.send_call_single_avatar(acc, room, u_id, av_id, 'xgcUserAvData1')
-                    if isexist:
-                        self.controls[acc][room].update_user_avatar(av_id)
+            error = obj.stanza.getTag('error')
+            if not error:
+                self.userdata[room][myjid]['av_id'] = av_id
+                accounts = app.contacts.get_accounts()
+                for acc in accounts:
+                    realjid = app.get_jid_from_account(acc)
+                    realjid = app.get_jid_without_resource(str(realjid))
+                    if myjid == realjid:
+                        # return dir or send stanza call for avatar and return False
+                        isexist = self.send_call_single_avatar(acc, room, u_id, av_id, 'xgcUserAvData1')
+                        if isexist:
+                            self.controls[acc][room].update_user_avatar(av_id)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -337,37 +418,10 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
-        cr_right_query = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights')
         if cr_invite:
             self.invite_to_chatroom_recieved(obj)
         elif cr_message:
             self.xabber_message_recieved(obj)
-        elif cr_right_query:
-            self.rights_query_recieved(obj)
-
-    @log_calls('XabberGroupsPlugin')
-    def rights_query_recieved(self, obj):
-        myjid = obj.stanza.getAttr('to')
-        myjid = app.get_jid_without_resource(str(myjid))
-        fromjid = obj.jid
-        userid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('id').getData()
-        jid = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('jid').getData()
-        badge = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('badge').getData()
-        nickname = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item').getTag('nickname').getData()
-        av_id = ''
-        try:
-            av_id = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('metadata',
-                                                                                      namespace='urn:xmpp:avatar:metadata')
-            av_id = av_id.getTag('info').getAttr('id')
-        except:
-            av_id = 'unknown'
-        rights = {'jid': jid,
-                  'nickname': nickname,
-                  'id': userid,
-                  'av_id': av_id,
-                  'badge': badge
-            }
-
 
 
     @log_calls('XabberGroupsPlugin')
@@ -538,7 +592,7 @@ class XabberGroupsPlugin(GajimPlugin):
             is_data_exist = self.userdata[room][acc_jid]['av_id']
             self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
         except:
-            self.send_ask_for_rights(chat_control, room)
+            self.send_ask_for_rights(chat_control, room, type='XGCUserdata')
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -925,37 +979,25 @@ class Base(object):
 
 
 
-    def on_avatar_press_event(self, eb, event, additional_data):
-        # TODO EDIT GTK.MESSAGE DIALOG FOR AVATARS
-        def on_ok():
-            return
-
-        def on_cancel():
-            return
+    def on_avatar_press_event(self, eb, event, additional_data=None):
+        if not additional_data:
+            additional_data = self.plugin.userdata[self.room_jid][self.cli_jid]
 
         # left click
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
-            pritext = _('user data')
-            sectext = _('%(name)s  info. \n'
-                        'name: %(name)s \n'
-                        'role: %(role)s \n'
-                        'jid: %(jid)s \n'
-                        'id: %(id)s \n'
-                        'avatar id: %(av_id)s \n'
-                        'two buttons exist:') % {'name': additional_data['nickname'],
-                                                 'role': additional_data['role'],
-                                                 'jid': additional_data['jid'],
-                                                 'id': additional_data['id'],
-                                                 'av_id': additional_data['av_id']}
-            dialog = dialogs.NonModalConfirmationDialog(pritext, sectext=sectext,
-                                                        on_response_ok=on_ok, on_response_cancel=on_cancel)
-            dialog.popup()
+            u_id = additional_data['id']
+            self.plugin.send_ask_for_rights(self.chat_control, to_jid=self.room_jid,
+                                            id=u_id, type='XGCUserOptions')
 
         # right klick
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             return
 
-    def on_self_avatar_press_event(self, eb, event):
+    def on_upload_avatar_dialog(self, eb, event, additional_data=None):
+        if not additional_data:
+            additional_data = self.plugin.userdata[self.room_jid][self.cli_jid]
+        u_id = additional_data['id']
+
         dialog = Gtk.FileChooserDialog(_('Choose an avatar'), None,
                                        Gtk.FileChooserAction.OPEN,
                                        (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
@@ -969,7 +1011,7 @@ class Base(object):
             print("Open clicked")
             avatar_base, av_hash = self.plugin.img_to_base64(dialog.get_filename())
             # send avatar base64
-            self.plugin.send_publish_avatar_data(avatar_base, av_hash, self.room_jid, self.cli_jid)
+            self.plugin.send_publish_avatar_data(avatar_base, av_hash, self.room_jid, self.cli_jid, u_id)
         elif response == Gtk.ResponseType.CANCEL:
             print("Cancel clicked")
         dialog.destroy()
@@ -1092,7 +1134,7 @@ class Base(object):
         self.text_editor.set_name('GCTextEditor')
 
         self.user_avatar = Gtk.EventBox()
-        self.user_avatar.connect('button-press-event', self.on_self_avatar_press_event)
+        self.user_avatar.connect('button-press-event', self.on_avatar_press_event)
         av_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 48, 48, False)
         av_image = Gtk.Image.new_from_pixbuf(av_pixbuf)
         gtkgui_helpers.add_css_to_widget(av_image, css)
