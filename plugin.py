@@ -525,10 +525,12 @@ class XabberGroupsPlugin(GajimPlugin):
         account = chat_control.contact.account.name
         room = chat_control.contact.jid
         acc_jid = app.get_jid_from_account(account)
-        # if jid in allowjids:  # ask for rights if xgc if open chat control
-        if account not in self.controls:
-            self.controls[account] = {}
-        self.controls[account][room] = Base(self, chat_control.conv_textview, chat_control)
+
+        if room in allowjids:
+            # if jid in allowjids:  # ask for rights if xgc if open chat control
+            if account not in self.controls:
+                self.controls[account] = {}
+            self.controls[account][room] = Base(self, chat_control.conv_textview, chat_control)
 
         # check if user data is already exist
         # if its not, ask for user data
@@ -554,7 +556,7 @@ class XabberGroupsPlugin(GajimPlugin):
 
         account = tv.account
         for jid in self.controls[account]:
-            if self.controls[account][jid].textview != tv or jid not in allowjids:
+            if self.controls[account][jid].textview != tv:
                 continue
             self.controls[account][jid].print_real_text(
                 real_text, text_tags, graphics, iter_, additional_data)
@@ -591,8 +593,7 @@ class Base(object):
         self.textview.tv.add(self.scrolled)
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
 
-        if self.room_jid in allowjids:
-            self.create_buttons(self.chat_control)
+        self.create_buttons(self.chat_control)
 
     def resize(self, widget, r):
         self.normalize_action_hbox()
