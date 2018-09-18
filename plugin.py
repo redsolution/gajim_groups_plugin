@@ -124,14 +124,27 @@ class XabberGroupsPlugin(GajimPlugin):
             image.set_from_pixbuf(pixbuf)
             roster.model[iter_][0] = image
 
+
+            print('send ask\n'*100)
+            room = app.get_jid_without_resource(str(obj.stanza.getAttr('from')))
+            myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
+            account = None
+            accounts = app.contacts.get_accounts()
+            for acc in accounts:
+                realjid = app.get_jid_from_account(acc)
+                realjid = app.get_jid_without_resource(str(realjid))
+                if myjid == realjid:
+                    account = acc
+            # check if user data is already exist
+            # if its not, ask for user data
+            try:
+                is_data_exist = self.userdata[room][myjid]['av_id']
+                self.controls[account][room].on_userdata_updated(self.userdata[room][myjid])
+            except:
+                self.send_ask_for_rights(myjid, room, type='XGCUserdata')
+
     @log_calls('ClientsIconsPlugin')
     def connect_with_roster_draw_contact(self, roster, jid, account, contact):
-        # TODO add update icon when add contact to allowjids
-        print(roster)
-        print(type(roster))
-        print(roster.model)
-        print(type(roster.model))
-        print(jid)
         if jid in allowjids:
             child_iters = roster._get_contact_iter(jid, account, contact, roster.model)
             if not child_iters:
@@ -147,8 +160,6 @@ class XabberGroupsPlugin(GajimPlugin):
         to_jid = obj.jid
         from_jid = obj.account
         from_jid = app.get_jid_from_account(from_jid)
-        print(to_jid)
-        print(from_jid)
         if to_jid in allowjids:
             add_data = self.userdata[to_jid][from_jid]
             obj.additional_data.update({'jid': add_data['jid'],
@@ -156,7 +167,7 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'id': add_data['id'],
                                         'av_id': add_data['av_id'],
                                         'badge': add_data['badge'],
-                                        'role': '',
+                                        'role': add_data['role'],
                                         'message': obj.message,
                                         'ts': datetime.datetime.now().isoformat()
                                         })
@@ -172,6 +183,10 @@ class XabberGroupsPlugin(GajimPlugin):
             if jid not in allowjids:
                 continue
             self.controls[account][jid].print_real_text(obj)
+
+    @log_calls('XabberGroupsPlugin')
+    def forward_constructor(self, obj, forward_data):
+        return
 
     @log_calls('XabberGroupsPlugin')
     def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid, u_id = None):
@@ -194,16 +209,43 @@ class XabberGroupsPlugin(GajimPlugin):
         app.connections[account].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
-    def send_ask_for_rights(self, chat_control, to_jid, id='', type=''):
-        print(to_jid)
-        print(chat_control.contact.name)
-        print(chat_control.contact)
-        print(chat_control.contact.jid)
-        stanza_send = nbxmpp.Iq(to=to_jid, typ='get')
-        stanza_send.setAttr('id', type)
-        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
-        stanza_send.getTag('query').setAttr('id', str(id))
-        app.connections[chat_control.account].connection.send(stanza_send, now=True)
+    def send_ask_for_rights(self, myjid, room, id='', type=''):
+
+        accounts = app.contacts.get_accounts()
+        for acc in accounts:
+            realjid = app.get_jid_from_account(acc)
+            realjid = app.get_jid_without_resource(str(realjid))
+            if myjid == realjid:
+
+                stanza_send = nbxmpp.Iq(to=room, typ='get')
+                stanza_send.setAttr('id', type)
+                stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+                stanza_send.getTag('query').setAttr('id', str(id))
+                app.connections[acc].connection.send(stanza_send, now=True)
+
+    @log_calls('XabberGroupsPlugin')
+    def send_set_user_rights(self, myjid, room, user_id, rights):
+
+        stanza_send = nbxmpp.Iq(to=room, typ=set)
+        stanza_send.setTag('query', namespace=XABBER_GC+'#members').setTagAttr('item', 'id', user_id)
+        # item = stanza_send.getTag('query').getTag('item')
+        # FIXME trouble with multiple tags
+        for perm in rights['permissions']:
+            print(perm)
+            item = stanza_send.getTag('query').getTag('item').setTag('permission')
+            item.setAttr('name', perm)
+            item.setAttr('expires', 'never')
+        for rest in rights['restrictions']:
+            print(rest)
+            item = stanza_send.getTag('query').getTag('item').setTag('restriction')
+            item.setAttr('name', rest)
+            item.setAttr('expires', 'never')
+
+        accounts = app.contacts.get_accounts()
+        for acc in accounts:
+            realjid = app.get_jid_from_account(acc)
+            if myjid == realjid:
+                app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
@@ -278,22 +320,32 @@ class XabberGroupsPlugin(GajimPlugin):
                 except: av_id = ''
                 # rights
                 i = item.getTags('restriction')
-                restriction = []
+                restriction = {}
                 for k in i:
-                    restriction.append([k.getAttr('name'), k.getAttr('expires'),
-                                        k.getAttr('issued-by'), k.getAttr('issued-at')])
+                    restriction[k.getAttr('name')] = [k.getAttr('expires'),
+                                                      k.getAttr('issued-by'),
+                                                      k.getAttr('issued-at')]
                 i = item.getTags('permission')
-                permission = []
+                permission = {}
                 for k in i:
-                    permission.append([k.getAttr('name'), k.getAttr('expires'),
-                                       k.getAttr('issued-by'), k.getAttr('issued-at')])
+                    permission[k.getAttr('name')] = [k.getAttr('expires'),
+                                                     k.getAttr('issued-by'),
+                                                     k.getAttr('issued-at')]
                 user_rights = {'restrictions': restriction,
                                'permissions': permission}
+
+                role = ''
+                if 'owner' in permission:
+                    role = 'owner'
+                elif len(permission) > 0:
+                    role = 'admin'
+
                 userdata = {'id': id,
                             'jid': jid,
                             'badge': badge,
                             'nickname': nickname,
                             'av_id': av_id,
+                            'role': role,
                             'rights': user_rights}
                 print('data\n'*10)
                 room = obj.stanza.getAttr('from')
@@ -342,11 +394,19 @@ class XabberGroupsPlugin(GajimPlugin):
                                                      k.getAttr('issued-at')]
                 user_rights = {'restrictions': restriction,
                                'permissions': permission}
+
+                role = ''
+                if 'owner' in permission:
+                    role = 'owner'
+                elif len(permission) > 0:
+                    role = 'admin'
+
                 userdata = {'id': id,
                             'jid': jid,
                             'badge': badge,
                             'nickname': nickname,
                             'av_id': av_id,
+                            'role': role,
                             'rights': user_rights}
 
                 room = obj.stanza.getAttr('from')
@@ -592,7 +652,7 @@ class XabberGroupsPlugin(GajimPlugin):
             is_data_exist = self.userdata[room][acc_jid]['av_id']
             self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
         except:
-            self.send_ask_for_rights(chat_control, room, type='XGCUserdata')
+            self.send_ask_for_rights(acc_jid, room, type='XGCUserdata')
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -986,7 +1046,7 @@ class Base(object):
         # left click
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
             u_id = additional_data['id']
-            self.plugin.send_ask_for_rights(self.chat_control, to_jid=self.room_jid,
+            self.plugin.send_ask_for_rights(self.cli_jid, room=self.room_jid,
                                             id=u_id, type='XGCUserOptions')
 
         # right klick
