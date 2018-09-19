@@ -40,6 +40,7 @@ class UserDataDialog(Gtk.Dialog):
         self.rights = {}
         self.switches = {}
 
+        # =========================== header ============================= #
         css = '''
         #edit_allow{
         border: none;
@@ -105,7 +106,9 @@ class UserDataDialog(Gtk.Dialog):
         header_grid.attach(self.avatar, 0, 0, 1, 2)
         header_grid.attach(namebadge_grid, 1, 0, 1, 1)
         header_grid.attach(jid_id_grid, 1, 1, 1, 1)
+        # =========================== end header ============================= #
 
+        # =========================== list of rights ============================= #
         # rights listbox
         # scrolled = Gtk.ScrolledWindow()
         # scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -145,7 +148,7 @@ class UserDataDialog(Gtk.Dialog):
             return row
 
         # welcome to india, lets dance!
-        # India ens, sorry but that was fun :)
+        # India ends, sorry but that was fun :)
         RestLabel = Gtk.Label('Restrictions')
         RestLabel.set_margin_bottom(10)
         RestLabel.set_margin_top(10)
@@ -170,11 +173,9 @@ class UserDataDialog(Gtk.Dialog):
                 listbox.add(addrow(i, True, res[i][0]))
             else:
                 listbox.add(addrow(i, False))
+        # =========================== end list of rights ============================= #
 
-        for i in self.rights:
-            print(i, self.rights[i])
-
-        # ======================================================================== #
+        # =========================== buttons at the bottom ============================= #
 
         button_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=50)
         button_hbox.set_margin_top(20)
@@ -241,8 +242,7 @@ class UserDataDialog(Gtk.Dialog):
         if self.can_block or self.is_owner:
             leftgrid.pack_start(btn_block, False, True, 0)
 
-
-        # ======================================================================== #
+        # =========================== end buttons at the bottom ============================= #
 
         box = self.get_content_area()
         css = '''#box_content_area {
@@ -256,19 +256,32 @@ class UserDataDialog(Gtk.Dialog):
         self.show_all()
 
     def on_save_clicked(self, eb, event):
-        new_userdata = {'restrictions': [],
-                        'permissions': []}
 
+        # =========================== if rights changed =========================== #
+        new_userdata = {'restrictions': {},
+                        'permissions': {}}
+
+        # for right in rights_list:
+        #    if right has changed:
+        #        add it to changed-list
         for rest in ['read', 'send-audio', 'send-image', 'write']:
-            if self.switches[rest].get_state():
-                new_userdata['restrictions'].append(rest)
-        for perm in ['owner', 'block-member', 'change-badge', 'change-chat',
-                'change-nickname', 'change-restriction', 'invite-member', 'remove-member']:
-            if self.switches[perm].get_state():
-                new_userdata['permissions'].append(perm)
+            if (rest in self.userdata['rights']['restrictions']) != self.switches[rest].get_state():
+                new_userdata['restrictions'][rest] = self.switches[rest].get_state()
+                print(rest, self.switches[rest].get_state())
 
-        self.plugin.send_set_user_rights(self.chat_control.cli_jid, self.chat_control.room_jid,
-                                         self.userdata['id'], new_userdata)
+        for perm in ['owner', 'block-member', 'change-badge', 'change-chat',
+                     'change-nickname', 'change-restriction', 'invite-member', 'remove-member']:
+            if (perm in self.userdata['rights']['permissions']) != self.switches[perm].get_state():
+                new_userdata['permissions'][perm] = self.switches[perm].get_state()
+                print(perm, self.switches[perm].get_state())
+
+        # if changed-list have got at least 1 change:
+        #    ask for rights changing
+        if len(new_userdata['restrictions']) > 0 or len(new_userdata['permissions']) > 0:
+            self.plugin.send_set_user_rights(self.chat_control.cli_jid, self.chat_control.room_jid,
+                                             self.userdata['id'], new_userdata)
+        self.destroy()
+        # =========================== end if rights changed =========================== #
 
     def popup(self):
         vb = self.get_children()[0].get_children()[0]

@@ -4,7 +4,7 @@ import uuid
 import nbxmpp
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango
+from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango, Gio
 from groups_plugin.plugin_dialogs import UserDataDialog
 from nbxmpp import simplexml
 from nbxmpp.protocol import JID
@@ -80,32 +80,23 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def activate(self):
-        self.active = None
-        roster = app.interface.roster
-        col = Gtk.TreeViewColumn()
-        roster.nb_ext_renderers += 1
-        self.renderer_num = 11 + roster.nb_ext_renderers
-        self.renderer = Gtk.CellRendererPixbuf()
-        client_icon_rend = (
-            'xgc_icon', self.renderer, False,
-            'pixbuf', self.renderer_num,
-            roster._fill_pep_pixbuf_renderer, self.renderer_num)
-        # remove old column
-        roster.tree.remove_column(roster.tree.get_column(0))
-        # add new renderer in renderers list
-        position = 'avatar'
-        for renderer in roster.renderers_list:
-            if renderer[0] == position:
-                break
-        num = roster.renderers_list.index(renderer)
-        roster.renderers_list.insert(num, client_icon_rend)
-        # fill and append column
-        roster.fill_column(col)
-        roster.tree.insert_column(col, 0)
-        # redraw roster
-        roster.columns += [GdkPixbuf.Pixbuf]
-        self.active = True
-        roster.setup_and_draw_roster()
+
+        # menu bar
+        # add 'create chat' item
+        menubar = app.app.get_menubar()
+        menu_position = 1
+        if app.prefers_app_menu():
+            menu_position = 0
+        accounts_list = sorted(app.contacts.get_accounts())
+        acc_menu = menubar.get_item_link(menu_position, 'submenu')
+
+        start_xgc = _('create group chat')
+
+        menubar.append_item(Gio.MenuItem.new(start_xgc, None))
+
+
+
+
 
 
     @log_calls('ClientsIconsPlugin')
@@ -124,24 +115,10 @@ class XabberGroupsPlugin(GajimPlugin):
             image.set_from_pixbuf(pixbuf)
             roster.model[iter_][0] = image
 
-
-            print('send ask\n'*100)
+            # send ask for user rights
             room = app.get_jid_without_resource(str(obj.stanza.getAttr('from')))
             myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
-            account = None
-            accounts = app.contacts.get_accounts()
-            for acc in accounts:
-                realjid = app.get_jid_from_account(acc)
-                realjid = app.get_jid_without_resource(str(realjid))
-                if myjid == realjid:
-                    account = acc
-            # check if user data is already exist
-            # if its not, ask for user data
-            try:
-                is_data_exist = self.userdata[room][myjid]['av_id']
-                self.controls[account][room].on_userdata_updated(self.userdata[room][myjid])
-            except:
-                self.send_ask_for_rights(myjid, room, type='XGCUserdata')
+            self.send_ask_for_rights(myjid, room, type='XGCUserdata')
 
     @log_calls('ClientsIconsPlugin')
     def connect_with_roster_draw_contact(self, roster, jid, account, contact):
@@ -171,22 +148,6 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'message': obj.message,
                                         'ts': datetime.datetime.now().isoformat()
                                         })
-        account = None
-        accounts = app.contacts.get_accounts()
-        myjid = from_jid
-        for acc in accounts:
-            realjid = app.get_jid_from_account(acc)
-            realjid = app.get_jid_without_resource(str(realjid))
-            if myjid == realjid:
-                account = acc
-        for jid in self.controls[account]:
-            if jid not in allowjids:
-                continue
-            self.controls[account][jid].print_real_text(obj)
-
-    @log_calls('XabberGroupsPlugin')
-    def forward_constructor(self, obj, forward_data):
-        return
 
     @log_calls('XabberGroupsPlugin')
     def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid, u_id = None):
@@ -226,25 +187,39 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def send_set_user_rights(self, myjid, room, user_id, rights):
 
-        stanza_send = nbxmpp.Iq(to=room, typ=set)
-        stanza_send.setTag('query', namespace=XABBER_GC+'#members').setTagAttr('item', 'id', user_id)
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+        stanza_send.getTag('query').setTagAttr('item', 'id', str(user_id))
         # item = stanza_send.getTag('query').getTag('item')
-        # FIXME trouble with multiple tags
+        # expires
+        # 'never' for indefinitely
+        # 'none' for remove
+
         for perm in rights['permissions']:
-            print(perm)
-            item = stanza_send.getTag('query').getTag('item').setTag('permission')
+            item = stanza_send.getTag('query').getTag('item').addChild('permission')
             item.setAttr('name', perm)
-            item.setAttr('expires', 'never')
+            if rights['permissions'][perm]:
+                item.setAttr('expires', 'never')
+            else:
+                item.setAttr('expires', 'none')
+
         for rest in rights['restrictions']:
-            print(rest)
-            item = stanza_send.getTag('query').getTag('item').setTag('restriction')
+            item = stanza_send.getTag('query').getTag('item').addChild('restriction')
             item.setAttr('name', rest)
-            item.setAttr('expires', 'never')
+            if rights['restrictions'][rest]:
+                item.setAttr('expires', 'never')
+            else:
+                item.setAttr('expires', 'none')
 
         accounts = app.contacts.get_accounts()
         for acc in accounts:
             realjid = app.get_jid_from_account(acc)
+            realjid = app.get_jid_without_resource(str(realjid))
             if myjid == realjid:
+                print(myjid)
+                print(realjid)
+                print(room)
+                print(user_id)
                 app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
@@ -1035,6 +1010,8 @@ class Base(object):
             self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
         else:
             self.print_server_info(real_text)
+
+        gtkgui_helpers.scroll_to_end(self.scrolled)
 
 
 
