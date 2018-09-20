@@ -158,9 +158,13 @@ class UserDataDialog(Gtk.Dialog):
 
         for i in ['read', 'send-audio', 'send-image', 'write']:
             if i in res:
-                listbox.add(addrow(i, True, res[i][0]))
+                row = addrow(i, True, res[i][0])
+                row.set_margin_top(8)
+                listbox.add(row)
             else:
-                listbox.add(addrow(i, False))
+                row = addrow(i, False)
+                row.set_margin_top(8)
+                listbox.add(row)
 
         PermLabel = Gtk.Label('Permissions')
         PermLabel.set_margin_bottom(10)
@@ -171,9 +175,13 @@ class UserDataDialog(Gtk.Dialog):
         for i in ['owner', 'block-member', 'change-badge', 'change-chat',
                 'change-nickname', 'change-restriction', 'invite-member', 'remove-member']:
             if i in res:
-                listbox.add(addrow(i, True, res[i][0]))
+                row = addrow(i, True, res[i][0])
+                row.set_margin_top(8)
+                listbox.add(row)
             else:
-                listbox.add(addrow(i, False))
+                row = addrow(i, False)
+                row.set_margin_top(8)
+                listbox.add(row)
         # =========================== end list of rights ============================= #
 
         # =========================== buttons at the bottom ============================= #
@@ -187,6 +195,7 @@ class UserDataDialog(Gtk.Dialog):
         rightgrid = Gtk.Box()
         button_hbox.pack_start(leftgrid, True, True, 0)
         button_hbox.pack_start(rightgrid, False, True, 0)
+        button_hbox.set_size_request(-1, 36)
 
         # css is coming
         css = '''
@@ -218,14 +227,11 @@ class UserDataDialog(Gtk.Dialog):
         }
         '''
 
-        btn_kick = Gtk.Button(_('kick'))
-        btn_block = Gtk.Button(_('block'))
-        btn_save = Gtk.Button(_('save'))
+        btn_kick = Gtk.Button(_('KICK'))
+        btn_block = Gtk.Button(_('BLOCK'))
+        btn_save = Gtk.Button(_('SAVE'))
         btn_save.connect('button-press-event', self.on_save_clicked)
-        btn_kick.set_size_request(64, 36)
         btn_kick.set_margin_right(10)
-        btn_block.set_size_request(64, 36)
-        btn_save.set_size_request(64, 36)
 
         gtkgui_helpers.add_css_to_widget(btn_kick, css)
         btn_kick.set_name('Xbutton-blackfont')
@@ -292,18 +298,162 @@ class UserDataDialog(Gtk.Dialog):
 class CreateGroupchatDialog(Gtk.Dialog):
     def __init__(self, plugin):
         Gtk.Dialog.__init__(self, _('Add new group chat'), None, 0)
-        accounts_list = sorted(app.contacts.get_accounts())
-        accounts_store = Gtk.ListStore(int, str)
-        for acc_id in range(0, len(accounts_list)):
-            accounts_store.append([acc_id, accounts_list[acc_id]])
-        accounts_combo = Gtk.ComboBox.new_with_model_and_entry(accounts_store)
+        self.set_default_size(400, 400)
 
+        # top label
+        label_account = Gtk.Label('Account')
+        label_account_grid = Gtk.Grid()
+        label_account_grid.set_margin_bottom(10)
+        label_account_grid.set_margin_top(10)
+        label_account_grid.set_margin_left(20)
+        label_account_grid.set_margin_right(20)
+        label_account_grid.add(label_account)
 
+        # account selector
+        self.accounts_list = sorted(app.contacts.get_accounts())
+        self.accounts_combo = Gtk.ComboBoxText()
+        self.accounts_combo.set_entry_text_column(0)
+        self.accounts_combo.set_margin_bottom(10)
+        self.accounts_combo.set_margin_left(20)
+        self.accounts_combo.set_margin_right(20)
+        self.accounts_combo.set_size_request(-1, 44)
+        for acc in self.accounts_list:
+            jid = app.get_jid_from_account(acc)
+            self.accounts_combo.append_text(jid)
+
+        # groupchat name
+        self.groupchat_name = Gtk.Entry()
+        self.groupchat_name.set_placeholder_text(_('Group chat name'))
+        self.groupchat_name.set_margin_bottom(10)
+        self.groupchat_name.set_margin_left(20)
+        self.groupchat_name.set_margin_right(20)
+        self.groupchat_name.set_size_request(-1, 44)
+
+        # group jid + @ + group server
+        groupchat_jid_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        groupchat_jid_box.set_margin_bottom(10)
+        groupchat_jid_box.set_margin_left(20)
+        groupchat_jid_box.set_margin_right(20)
+        self.groupchat_jid = Gtk.Entry()
+        self.groupchat_jid.set_placeholder_text(_('Group Jid'))
+        self.groupchat_jid.set_size_request(-1, 44)
+        groupchat_jid_at = Gtk.Label('@xmppdev01.xabber.com')
+        groupchat_jid_at.set_margin_left(8)
+        groupchat_jid_at.set_size_request(-1, 44)
+        groupchat_jid_box.pack_start(self.groupchat_jid, True, True, 0)
+        groupchat_jid_box.pack_start(groupchat_jid_at, False, False, 0)
+
+        # checkboxes is_anonimous and is_searchable
+        self.checkbox_is_anonimous = Gtk.CheckButton.new_with_label(_('Anonymous'))
+        self.checkbox_is_anonimous.set_size_request(-1, 44)
+        self.checkbox_is_anonimous.set_margin_left(20)
+        self.checkbox_is_anonimous.set_margin_right(20)
+        self.checkbox_is_searchable = Gtk.CheckButton.new_with_label(_('Searchable'))
+        self.checkbox_is_searchable.set_size_request(-1, 44)
+        self.checkbox_is_searchable.set_margin_left(20)
+        self.checkbox_is_searchable.set_margin_right(20)
+        self.checkbox_is_searchable.set_margin_bottom(10)
+
+        # description
+        self.description = Gtk.Entry()
+        self.description.set_placeholder_text(_('Description'))
+        self.description.set_size_request(-1, 44)
+        self.description.set_margin_left(20)
+        self.description.set_margin_right(20)
+        self.description.set_margin_bottom(10)
+
+        # open type or member only
+        self.new_chat_model = Gtk.ComboBoxText()
+        self.new_chat_model.set_entry_text_column(0)
+        self.new_chat_model.set_margin_bottom(10)
+        self.new_chat_model.set_margin_left(20)
+        self.new_chat_model.set_margin_right(20)
+        self.new_chat_model.set_size_request(-1, 44)
+        self.new_chat_model.append_text('open')
+        self.new_chat_model.append_text('member-only')
+
+        # buttons
+        css = '''
+        #Xbutton-blackfont {
+        color: #212121;
+        margin: 0 5px;
+        padding: 0 10px;
+        background-color: #FFFFFF;
+        background: #FFFFFF;
+        border: none;
+        border-radius: 2px;
+        font-size: 13px;
+        font-weight: bold;
+        }
+        #Xbutton-redfont {
+        color: #D32F2F;
+        margin: 0 5px;
+        padding: 0 10px;
+        background-color: #FFFFFF;
+        background: #FFFFFF;
+        border: none;
+        border-radius: 2px;
+        font-size: 13px;
+        font-weight: bold;
+        }
+        #Xbutton-blackfont:hover, #Xbutton-redfont:hover{
+        background-color: #E0E0E0;
+        background: #E0E0E0;
+        }
+        '''
+        btn_cancel = Gtk.Button(_('CANCEL'))
+        btn_cancel.connect('button-press-event', self.on_cancel_clicked)
+        btn_add = Gtk.Button(_('ADD'))
+        btn_add.connect('button-press-event', self.on_add_clicked)
+        gtkgui_helpers.add_css_to_widget(btn_cancel, css)
+        btn_cancel.set_name('Xbutton-blackfont')
+        gtkgui_helpers.add_css_to_widget(btn_add, css)
+        btn_add.set_name('Xbutton-redfont')
+
+        button_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=50)
+        button_hbox.set_margin_bottom(10)
+        button_hbox.set_margin_left(20)
+        button_hbox.set_margin_right(20)
+        leftgrid = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        rightgrid = Gtk.Box()
+        leftgrid.pack_start(btn_cancel, False, True, 0)
+        rightgrid.pack_start(btn_add, False, True, 0)
+        button_hbox.pack_start(leftgrid, True, True, 0)
+        button_hbox.pack_start(rightgrid, False, True, 0)
+        button_hbox.set_size_request(-1, 36)
 
         box = self.get_content_area()
-        box.add(accounts_combo)
-        return
+        box.add(label_account_grid)
+        box.add(self.accounts_combo)
+        box.add(self.groupchat_name)
+        box.add(groupchat_jid_box)
+        box.add(self.checkbox_is_anonimous)
+        box.add(self.checkbox_is_searchable)
+        box.add(self.description)
+        box.add(self.new_chat_model)
+        box.add(button_hbox)
 
+    def on_cancel_clicked(self, eb, event):
+        print('cancel')
+        self.destroy()
+
+    def on_add_clicked(self, eb, event):
+        jid = self.accounts_combo.get_active_text()  # jid of current account
+        new_chat_name = self.groupchat_name.get_text()  # name of chat
+        room_jid = self.groupchat_jid.get_text()  # first part of jid of chat
+        is_anonimous = self.checkbox_is_anonimous.get_active()
+        is_searchable = self.checkbox_is_searchable.get_active()
+        description = self.description.get_text()  # text
+        chat_model = self.new_chat_model.get_active_text()  # open / member-only
+        print(jid)
+        print(new_chat_name)
+        print(room_jid)
+        print(is_anonimous)
+        print(is_searchable)
+        print(description)
+        print(chat_model)
+        print('add')
+        self.destroy()
 
     def popup(self):
         vb = self.get_children()[0].get_children()[0]

@@ -80,19 +80,16 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def activate(self):
-        xmenu = Gio.MenuItem.new(_('create chat'), 'create-xabber-chat')
+        create_groupcaht_name = _('Add group chat')
         menubar = app.app.get_menubar()
-        action = Gio.SimpleAction(name=_('create chat'))
-        action.connect("activate", self.start_CreateGroupchatDialog)
-        app.app.add_action(action)
-        menubar.append_item(xmenu)
+        menubar.append(create_groupcaht_name, "app.create-xabber-groupchat")
+        new_action = Gio.SimpleAction.new("create-xabber-groupchat", None)
+        new_action.connect("activate", self.start_CreateGroupchatDialog)
+        app.app.add_action(new_action)
 
-
-    def start_CreateGroupchatDialog(self):
-        CreateGroupchatDialog(self)
-
-
-
+    def start_CreateGroupchatDialog(self, action, parameter):
+        dialog = CreateGroupchatDialog(self)
+        response = dialog.popup()
 
     @log_calls('ClientsIconsPlugin')
     def presence_received(self, obj):
@@ -335,6 +332,8 @@ class XabberGroupsPlugin(GajimPlugin):
                         self.controls[acc][room].on_userdata_updated(userdata)
 
             if obj.stanza.getAttr('id') == 'XGCUserOptions':
+                room = obj.stanza.getAttr('from')
+                myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
                 item = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
                 id = item.getTag('id').getData()
                 try: jid = item.getTag('jid').getData()
@@ -344,6 +343,20 @@ class XabberGroupsPlugin(GajimPlugin):
                 try:
                     av_id = item.getTag('metadata', namespace='urn:xmpp:avatar:metadata').getTag('info').getAttr('id')
                     avatar_loc = os.path.normpath(AVATARS_DIR + '/' + av_id + '.jpg')
+                    try:
+                        file = open(avatar_loc)
+                    except:
+                        av_id = ''
+                        avatar_loc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
+                        account = None
+                        accounts = app.contacts.get_accounts()
+                        for acc in accounts:
+                            realjid = app.get_jid_from_account(acc)
+                            realjid = app.get_jid_without_resource(str(realjid))
+                            if myjid == realjid:
+                                account = acc
+                        if account:
+                            self.send_call_single_avatar(account, room, id, av_id)
                 except:
                     av_id = ''
                     avatar_loc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
@@ -379,8 +392,6 @@ class XabberGroupsPlugin(GajimPlugin):
                             'role': role,
                             'rights': user_rights}
 
-                room = obj.stanza.getAttr('from')
-                myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
                 for acc in app.contacts.get_accounts():
                     realjid = app.get_jid_from_account(acc)
                     realjid = app.get_jid_without_resource(str(realjid))
