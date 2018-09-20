@@ -5,7 +5,7 @@ import nbxmpp
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango, Gio
-from groups_plugin.plugin_dialogs import UserDataDialog
+from groups_plugin.plugin_dialogs import UserDataDialog, CreateGroupchatDialog
 from nbxmpp import simplexml
 from nbxmpp.protocol import JID
 from gajim import dialogs
@@ -80,21 +80,16 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def activate(self):
-
-        # menu bar
-        # add 'create chat' item
+        xmenu = Gio.MenuItem.new(_('create chat'), 'create-xabber-chat')
         menubar = app.app.get_menubar()
-        menu_position = 1
-        if app.prefers_app_menu():
-            menu_position = 0
-        accounts_list = sorted(app.contacts.get_accounts())
-        acc_menu = menubar.get_item_link(menu_position, 'submenu')
-
-        start_xgc = _('create group chat')
-
-        menubar.append_item(Gio.MenuItem.new(start_xgc, None))
+        action = Gio.SimpleAction(name=_('create chat'))
+        action.connect("activate", self.start_CreateGroupchatDialog)
+        app.app.add_action(action)
+        menubar.append_item(xmenu)
 
 
+    def start_CreateGroupchatDialog(self):
+        CreateGroupchatDialog(self)
 
 
 
@@ -621,13 +616,13 @@ class XabberGroupsPlugin(GajimPlugin):
                 self.controls[account] = {}
             self.controls[account][room] = Base(self, chat_control.conv_textview, chat_control)
 
-        # check if user data is already exist
-        # if its not, ask for user data
-        try:
-            is_data_exist = self.userdata[room][acc_jid]['av_id']
-            self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
-        except:
-            self.send_ask_for_rights(acc_jid, room, type='XGCUserdata')
+            # check if user data is already exist
+            # if its not, ask for user data
+            try:
+                is_data_exist = self.userdata[room][acc_jid]['av_id']
+                self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
+            except:
+                self.send_ask_for_rights(acc_jid, room, type='XGCUserdata')
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):

@@ -2,6 +2,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 from gajim import gtkgui_helpers
+from gajim.common import app
 
 class UserDataDialog(Gtk.Dialog):
 
@@ -249,7 +250,6 @@ class UserDataDialog(Gtk.Dialog):
         background-color: #FFFFFF;}'''
         gtkgui_helpers.add_css_to_widget(box, css)
         box.set_name('box_content_area')
-        print(type(box))
         box.add(header_grid)
         box.add(listbox)
         box.add(button_hbox)
@@ -287,5 +287,28 @@ class UserDataDialog(Gtk.Dialog):
         vb = self.get_children()[0].get_children()[0]
         vb.grab_focus()
         self.show_all()
+
+
+class CreateGroupchatDialog(Gtk.Dialog):
+    def __init__(self, plugin):
+        Gtk.Dialog.__init__(self, _('Add new group chat'), None, 0)
+        accounts_list = sorted(app.contacts.get_accounts())
+        accounts_store = Gtk.ListStore(int, str)
+        for acc_id in range(0, len(accounts_list)):
+            accounts_store.append([acc_id, accounts_list[acc_id]])
+        accounts_combo = Gtk.ComboBox.new_with_model_and_entry(accounts_store)
+
+
+
+        box = self.get_content_area()
+        box.add(accounts_combo)
+        return
+
+
+    def popup(self):
+        vb = self.get_children()[0].get_children()[0]
+        vb.grab_focus()
+        self.show_all()
+
 
 
