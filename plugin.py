@@ -55,6 +55,16 @@ def addallowjid(jid):
 
 allowjids = loadallowjid()
 
+def get_account_from_jid(jid):
+    account = None
+    accounts = app.contacts.get_accounts()
+    for acc in accounts:
+        realjid = app.get_jid_from_account(acc)
+        realjid = app.get_jid_without_resource(str(realjid))
+        if jid == realjid:
+            account = acc
+    return account
+
 class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
@@ -86,6 +96,8 @@ class XabberGroupsPlugin(GajimPlugin):
         new_action = Gio.SimpleAction.new("create-xabber-groupchat", None)
         new_action.connect("activate", self.start_CreateGroupchatDialog)
         app.app.add_action(new_action)
+
+        # gajim clear menu and next build its own
 
     def start_CreateGroupchatDialog(self, action, parameter):
         dialog = CreateGroupchatDialog(self)
@@ -145,13 +157,7 @@ class XabberGroupsPlugin(GajimPlugin):
     def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid, u_id = None):
         if not u_id:
             u_id = self.userdata[to_jid][from_jid]['id']
-        account = None
-        accounts = app.contacts.get_accounts()
-        for acc in accounts:
-            realjid = app.get_jid_from_account(acc)
-            realjid = app.get_jid_without_resource(str(realjid))
-            if from_jid == realjid:
-                account = acc
+        account = get_account_from_jid(from_jid)
         stanza_send = nbxmpp.Iq(to=to_jid, typ='set', frm=from_jid)
         stanza_send.setAttr('id', 'xgcPublish1')
         stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
@@ -164,17 +170,13 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def send_ask_for_rights(self, myjid, room, id='', type=''):
 
-        accounts = app.contacts.get_accounts()
-        for acc in accounts:
-            realjid = app.get_jid_from_account(acc)
-            realjid = app.get_jid_without_resource(str(realjid))
-            if myjid == realjid:
+        acc = get_account_from_jid(myjid)
 
-                stanza_send = nbxmpp.Iq(to=room, typ='get')
-                stanza_send.setAttr('id', type)
-                stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
-                stanza_send.getTag('query').setAttr('id', str(id))
-                app.connections[acc].connection.send(stanza_send, now=True)
+        stanza_send = nbxmpp.Iq(to=room, typ='get')
+        stanza_send.setAttr('id', type)
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+        stanza_send.getTag('query').setAttr('id', str(id))
+        app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def send_set_user_rights(self, myjid, room, user_id, rights):
@@ -203,16 +205,8 @@ class XabberGroupsPlugin(GajimPlugin):
             else:
                 item.setAttr('expires', 'none')
 
-        accounts = app.contacts.get_accounts()
-        for acc in accounts:
-            realjid = app.get_jid_from_account(acc)
-            realjid = app.get_jid_without_resource(str(realjid))
-            if myjid == realjid:
-                print(myjid)
-                print(realjid)
-                print(room)
-                print(user_id)
-                app.connections[acc].connection.send(stanza_send, now=True)
+        acc = get_account_from_jid(myjid)
+        app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def base64_to_image(self, img_base64, filename):
@@ -266,13 +260,8 @@ class XabberGroupsPlugin(GajimPlugin):
                 room = obj.stanza.getAttr('from')
                 myjid = obj.stanza.getAttr('to')
                 myjid = app.get_jid_without_resource(str(myjid))
-                accounts = app.contacts.get_accounts()
-                for acc in accounts:
-                    realjid = app.get_jid_from_account(acc)
-                    realjid = app.get_jid_without_resource(str(realjid))
-                    if myjid == realjid:
-                        self.controls[acc][room].update_user_avatar(id)
-                        return
+                acc = get_account_from_jid(myjid)
+                self.controls[acc][room].update_user_avatar(id)
 
         if on_userdata_get:
             if obj.stanza.getAttr('id') == 'XGCUserdata':
@@ -324,12 +313,8 @@ class XabberGroupsPlugin(GajimPlugin):
                 # self.controls[obj.account][room].remove_message_selection()
                 # doesnt work
 
-                accounts = app.contacts.get_accounts()
-                for acc in accounts:
-                    realjid = app.get_jid_from_account(acc)
-                    realjid = app.get_jid_without_resource(str(realjid))
-                    if myjid == realjid:
-                        self.controls[acc][room].on_userdata_updated(userdata)
+                acc = get_account_from_jid(myjid)
+                self.controls[acc][room].on_userdata_updated(userdata)
 
             if obj.stanza.getAttr('id') == 'XGCUserOptions':
                 room = obj.stanza.getAttr('from')
@@ -348,13 +333,7 @@ class XabberGroupsPlugin(GajimPlugin):
                     except:
                         av_id = ''
                         avatar_loc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
-                        account = None
-                        accounts = app.contacts.get_accounts()
-                        for acc in accounts:
-                            realjid = app.get_jid_from_account(acc)
-                            realjid = app.get_jid_without_resource(str(realjid))
-                            if myjid == realjid:
-                                account = acc
+                        account = get_account_from_jid(myjid)
                         if account:
                             self.send_call_single_avatar(account, room, id, av_id)
                 except:
@@ -392,12 +371,10 @@ class XabberGroupsPlugin(GajimPlugin):
                             'role': role,
                             'rights': user_rights}
 
-                for acc in app.contacts.get_accounts():
-                    realjid = app.get_jid_from_account(acc)
-                    realjid = app.get_jid_without_resource(str(realjid))
-                    if myjid == realjid:
-                        dialog = UserDataDialog(self, userdata, image, self.controls[acc][room])
-                        response = dialog.popup()
+                acc = get_account_from_jid(myjid)
+                if acc:
+                    dialog = UserDataDialog(self, userdata, image, self.controls[acc][room])
+                    response = dialog.popup()
 
         if on_uploading_avatar_response:
             # check is iq = response from xgc about uploading avatar
@@ -422,17 +399,10 @@ class XabberGroupsPlugin(GajimPlugin):
             new_info.setAttr('width', '64')
             new_info.setAttr('type', 'image/jpeg')
 
-            account = None
-            accounts = app.contacts.get_accounts()
-            for acc in accounts:
-                realjid = app.get_jid_from_account(acc)
-                realjid = app.get_jid_without_resource(str(realjid))
-                if myjid == realjid:
-                    account = acc
+            account = get_account_from_jid(myjid)
             app.connections[account].connection.send(stanza_send, now=True)
 
         if on_publish_response:
-            print('publish responsed!!!\n'*50)
             item = obj.stanza.getTag('pubsub', namespace='http://jabber.org/protocol/pubsub')
             room = obj.stanza.getAttr('from')
             myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
@@ -441,15 +411,11 @@ class XabberGroupsPlugin(GajimPlugin):
             error = obj.stanza.getTag('error')
             if not error:
                 self.userdata[room][myjid]['av_id'] = av_id
-                accounts = app.contacts.get_accounts()
-                for acc in accounts:
-                    realjid = app.get_jid_from_account(acc)
-                    realjid = app.get_jid_without_resource(str(realjid))
-                    if myjid == realjid:
-                        # return dir or send stanza call for avatar and return False
-                        isexist = self.send_call_single_avatar(acc, room, u_id, av_id, 'xgcUserAvData1')
-                        if isexist:
-                            self.controls[acc][room].update_user_avatar(av_id)
+                acc = get_account_from_jid(myjid)
+                # return dir or send stanza call for avatar and return False
+                isexist = self.send_call_single_avatar(acc, room, u_id, av_id, 'xgcUserAvData1')
+                if isexist:
+                    self.controls[acc][room].update_user_avatar(av_id)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -475,14 +441,12 @@ class XabberGroupsPlugin(GajimPlugin):
 
         def on_ok():
             addallowjid(jid)
-            accounts = app.contacts.get_accounts()
-            for account in accounts:
-                realjid = app.get_jid_from_account(account)
-                realjid = app.get_jid_without_resource(str(realjid))
-                if myjid == realjid:
-                    stanza_send = nbxmpp.Presence(to=jid, typ='subscribe', frm=realjid)
-                    app.connections[account].connection.send(stanza_send, now=True)
-                    return
+            account = get_account_from_jid(myjid)
+            realjid = app.get_jid_from_account(account)
+            realjid = app.get_jid_without_resource(str(realjid))
+            if account:
+                stanza_send = nbxmpp.Presence(to=jid, typ='subscribe', frm=realjid)
+                app.connections[account].connection.send(stanza_send, now=True)
             return
 
         def on_cancel():
@@ -587,14 +551,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'forward': forward_m,
                                     'ts': datetime.datetime.now().isoformat()
                                     })
-        account = None
-        accounts = app.contacts.get_accounts()
         myjid = obj.stanza.getAttr('to')
-        for acc in accounts:
-            realjid = app.get_jid_from_account(acc)
-            realjid = app.get_jid_without_resource(str(realjid))
-            if myjid == realjid:
-                account = acc
+        account = get_account_from_jid(myjid)
         if id != 'unknown' and account:
             self.send_call_single_avatar(account, room, userid, id)
 

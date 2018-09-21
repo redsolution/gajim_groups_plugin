@@ -317,9 +317,14 @@ class CreateGroupchatDialog(Gtk.Dialog):
         self.accounts_combo.set_margin_left(20)
         self.accounts_combo.set_margin_right(20)
         self.accounts_combo.set_size_request(-1, 44)
-        for acc in self.accounts_list:
-            jid = app.get_jid_from_account(acc)
-            self.accounts_combo.append_text(jid)
+        if len(self.accounts_list):
+            for acc in self.accounts_list:
+                jid = app.get_jid_from_account(acc)
+                self.accounts_combo.append_text(jid)
+            self.accounts_combo.set_active(0)
+        else:
+            self.accounts_combo.append_text(_('No accounts'))
+            self.accounts_combo.set_active(0)
 
         # groupchat name
         self.groupchat_name = Gtk.Entry()
@@ -371,6 +376,7 @@ class CreateGroupchatDialog(Gtk.Dialog):
         self.new_chat_model.set_size_request(-1, 44)
         self.new_chat_model.append_text('open')
         self.new_chat_model.append_text('member-only')
+        self.new_chat_model.set_active(0)
 
         # buttons
         css = '''
@@ -427,9 +433,9 @@ class CreateGroupchatDialog(Gtk.Dialog):
         box.add(self.accounts_combo)
         box.add(self.groupchat_name)
         box.add(groupchat_jid_box)
+        box.add(self.description)
         box.add(self.checkbox_is_anonimous)
         box.add(self.checkbox_is_searchable)
-        box.add(self.description)
         box.add(self.new_chat_model)
         box.add(button_hbox)
 
