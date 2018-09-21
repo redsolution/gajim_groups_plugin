@@ -26,6 +26,10 @@ class UserDataDialog(Gtk.Dialog):
         self.can_block = False
         self.is_owner = False
 
+        self.isme = False
+        if self.userdata['id'] == self.self_userdata['id']:
+            self.isme = True
+
         if 'owner' in self.self_userdata['rights']['permissions']:
             self.is_owner = True
         if 'remove-member' in self.self_userdata['rights']['permissions']:
@@ -33,7 +37,7 @@ class UserDataDialog(Gtk.Dialog):
         if 'block-member' in self.self_userdata['rights']['permissions']:
             self.can_block = True
         a = ['change-badge', 'change-nickname', 'change-restriction']
-        if list(set(a) & set(self.self_userdata['rights']['permissions'])):
+        if list(set(a) & set(self.self_userdata['rights']['permissions'])) or self.isme:
             self.can_edit = True
 
 
@@ -43,13 +47,6 @@ class UserDataDialog(Gtk.Dialog):
 
         # =========================== header ============================= #
         css = '''
-        #edit_allow{
-        border: none;
-        border-bottom: 1px dotted black;
-        background: #CCCCCC;
-        padding-left: 5px;
-        padding-right: 5px;
-        }
         #user_jid_id{
         font-size: 12px;
         color: #9E9E9E;
@@ -66,35 +63,39 @@ class UserDataDialog(Gtk.Dialog):
         self.avatar.set_margin_top(10)
         self.avatar.set_size_request(40, 40)
 
-        self.nickname = Gtk.TextView()
-        self.nickname.get_buffer().set_text(nickname_text)
+        self.nickname = Gtk.Entry()
+        self.nickname.set_placeholder_text(_('nickname'))
+        self.nickname.set_text(nickname_text)
         self.nickname.set_margin_top(10)
         self.nickname.set_size_request(48, -1)
 
-        if 'change-nickname' in self.self_userdata['rights']['permissions'] or self.is_owner:
-            gtkgui_helpers.add_css_to_widget(self.nickname, css)
-            self.nickname.set_name('edit_allow')
+        if 'change-nickname' in self.self_userdata['rights']['permissions'] or self.is_owner or self.isme:
             self.nickname.set_editable(True)
         else:
             self.nickname.set_editable(False)
 
-        self.badge = Gtk.TextView()
-        self.badge.get_buffer().set_text(badge_text)
+        self.badge = Gtk.Entry()
+        self.badge.set_placeholder_text(_('badge'))
+        self.badge.set_text(badge_text)
         self.badge.set_margin_left(10)
+        self.badge.set_margin_right(10)
         self.badge.set_margin_top(10)
-        self.badge.set_margin_right(20)
-        self.badge.set_size_request(48, -1)
+        self.badge.set_size_request(32, -1)
 
         if 'change-badge' in self.self_userdata['rights']['permissions'] or self.is_owner:
-            gtkgui_helpers.add_css_to_widget(self.badge, css)
-            self.badge.set_name('edit_allow')
             self.badge.set_editable(True)
         else:
             self.badge.set_editable(False)
 
+        emoticonbutton = Gtk.Button(u"\u263B")
+        emoticonbutton.set_margin_top(10)
+        emoticonbutton.set_margin_right(20)
+        emoticonbutton.set_size_request(32, -1)
+
         namebadge_grid = Gtk.Grid()
         namebadge_grid.attach(self.nickname, 0, 0, 1, 1)
         namebadge_grid.attach(self.badge, 1, 0, 1, 1)
+        namebadge_grid.attach(emoticonbutton, 2, 0, 1, 1)
 
         jid_id = Gtk.TextView()
         jid_id.get_buffer().set_text(user_id)
@@ -114,9 +115,10 @@ class UserDataDialog(Gtk.Dialog):
         # scrolled = Gtk.ScrolledWindow()
         # scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         # scrolled.set_size_request(-1, 400)
+        scrolled = Gtk.ScrolledWindow()
         listbox = Gtk.ListBox()
         listbox.set_selection_mode(Gtk.SelectionMode.NONE)
-        # scrolled.add(listbox)
+        scrolled.add(listbox)
 
         def addrow(name, state, expires='Not able'):
 
@@ -228,7 +230,9 @@ class UserDataDialog(Gtk.Dialog):
         '''
 
         btn_kick = Gtk.Button(_('KICK'))
+        btn_kick.connect('button-press-event', self.on_kick_clicked)
         btn_block = Gtk.Button(_('BLOCK'))
+        btn_block.connect('button-press-event', self.on_block_clicked)
         btn_save = Gtk.Button(_('SAVE'))
         btn_save.connect('button-press-event', self.on_save_clicked)
         btn_kick.set_margin_right(10)
@@ -244,7 +248,7 @@ class UserDataDialog(Gtk.Dialog):
 
         if self.can_edit or self.is_owner:
             rightgrid.pack_start(btn_save, False, True, 0)
-        if self.can_kick or self.is_owner:
+        if (self.can_kick or self.is_owner) and not 'owner' in self.userdata['rights']['permissions']:
             leftgrid.pack_start(btn_kick, False, True, 0)
         if self.can_block or self.is_owner:
             leftgrid.pack_start(btn_block, False, True, 0)
@@ -256,9 +260,9 @@ class UserDataDialog(Gtk.Dialog):
         background-color: #FFFFFF;}'''
         gtkgui_helpers.add_css_to_widget(box, css)
         box.set_name('box_content_area')
-        box.add(header_grid)
-        box.add(listbox)
-        box.add(button_hbox)
+        box.pack_start(header_grid, False, True, 0)
+        box.pack_start(scrolled, True, True, 0)
+        box.pack_start(button_hbox, False, True, 0)
         self.show_all()
 
     def on_save_clicked(self, eb, event):
@@ -286,8 +290,30 @@ class UserDataDialog(Gtk.Dialog):
         if len(new_userdata['restrictions']) > 0 or len(new_userdata['permissions']) > 0:
             self.plugin.send_set_user_rights(self.chat_control.cli_jid, self.chat_control.room_jid,
                                              self.userdata['id'], new_userdata)
+
+        # =========================== if nickname changed =========================== #
+        if (self.nickname.get_text() != self.userdata['nickname']) and (self.nickname.get_text().strip() != ''):
+            self.plugin.send_set_user_name(self.chat_control.cli_jid, self.chat_control.room_jid,
+                                           self.userdata['id'], self.nickname.get_text().strip())
+
+        # =========================== if badge changed =========================== #
+        if (self.badge.get_text() != self.userdata['badge']) and (self.badge.get_text().strip() != ''):
+            self.plugin.send_set_user_badge(self.chat_control.cli_jid, self.chat_control.room_jid,
+                                           self.userdata['id'], self.badge.get_text().strip())
+
+
         self.destroy()
-        # =========================== end if rights changed =========================== #
+
+    def on_kick_clicked(self, eb, event):
+        print('kick')
+        self.plugin.send_set_user_kick(self.chat_control.cli_jid, self.chat_control.room_jid, self.userdata['id'])
+        self.destroy()
+        return
+
+    def on_block_clicked(self, eb, event):
+        print('block')
+        self.destroy()
+        return
 
     def popup(self):
         vb = self.get_children()[0].get_children()[0]
@@ -299,6 +325,7 @@ class CreateGroupchatDialog(Gtk.Dialog):
     def __init__(self, plugin):
         Gtk.Dialog.__init__(self, _('Add new group chat'), None, 0)
         self.set_default_size(400, 400)
+        self.plugin = plugin
 
         # top label
         label_account = Gtk.Label('Account')
@@ -350,14 +377,29 @@ class CreateGroupchatDialog(Gtk.Dialog):
 
         # checkboxes is_anonimous and is_searchable
         self.checkbox_is_anonimous = Gtk.CheckButton.new_with_label(_('Anonymous'))
-        self.checkbox_is_anonimous.set_size_request(-1, 44)
+        self.checkbox_is_anonimous.set_active(False)
+        self.checkbox_is_anonimous.set_size_request(-1, 32)
         self.checkbox_is_anonimous.set_margin_left(20)
         self.checkbox_is_anonimous.set_margin_right(20)
+
         self.checkbox_is_searchable = Gtk.CheckButton.new_with_label(_('Searchable'))
-        self.checkbox_is_searchable.set_size_request(-1, 44)
+        self.checkbox_is_searchable.set_active(True)
+        self.checkbox_is_searchable.set_size_request(-1, 32)
         self.checkbox_is_searchable.set_margin_left(20)
         self.checkbox_is_searchable.set_margin_right(20)
-        self.checkbox_is_searchable.set_margin_bottom(10)
+
+        self.checkbox_is_discoverable = Gtk.CheckButton.new_with_label(_('Discoverable'))
+        self.checkbox_is_discoverable.set_active(True)
+        self.checkbox_is_discoverable.set_size_request(-1, 32)
+        self.checkbox_is_discoverable.set_margin_left(20)
+        self.checkbox_is_discoverable.set_margin_right(20)
+
+        self.checkbox_is_collect = Gtk.CheckButton.new_with_label(_('Collect avatars'))
+        self.checkbox_is_collect.set_active(True)
+        self.checkbox_is_collect.set_size_request(-1, 32)
+        self.checkbox_is_collect.set_margin_left(20)
+        self.checkbox_is_collect.set_margin_right(20)
+        self.checkbox_is_collect.set_margin_bottom(10)
 
         # description
         self.description = Gtk.Entry()
@@ -436,6 +478,8 @@ class CreateGroupchatDialog(Gtk.Dialog):
         box.add(self.description)
         box.add(self.checkbox_is_anonimous)
         box.add(self.checkbox_is_searchable)
+        box.add(self.checkbox_is_discoverable)
+        box.add(self.checkbox_is_collect)
         box.add(self.new_chat_model)
         box.add(button_hbox)
 
@@ -449,6 +493,8 @@ class CreateGroupchatDialog(Gtk.Dialog):
         room_jid = self.groupchat_jid.get_text()  # first part of jid of chat
         is_anonimous = self.checkbox_is_anonimous.get_active()
         is_searchable = self.checkbox_is_searchable.get_active()
+        is_discoverable = self.checkbox_is_discoverable.get_active()
+        is_collect_avs = self.checkbox_is_collect.get_active()
         description = self.description.get_text()  # text
         chat_model = self.new_chat_model.get_active_text()  # open / member-only
         print(jid)
@@ -459,6 +505,16 @@ class CreateGroupchatDialog(Gtk.Dialog):
         print(description)
         print(chat_model)
         print('add')
+        self.plugin.send_ask_for_create_group_chat(jid, {
+            'name': new_chat_name,
+            'jid': room_jid,
+            'is_anon': is_anonimous,
+            'is_search': is_searchable,
+            'is_discov': is_discoverable,
+            'is_collect': is_collect_avs,
+            'desc': description,
+            'access': chat_model
+        })
         self.destroy()
 
     def popup(self):

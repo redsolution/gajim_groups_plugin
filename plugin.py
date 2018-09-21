@@ -56,6 +56,7 @@ def addallowjid(jid):
 allowjids = loadallowjid()
 
 def get_account_from_jid(jid):
+    jid = app.get_jid_without_resource(str(jid))
     account = None
     accounts = app.contacts.get_accounts()
     for acc in accounts:
@@ -167,11 +168,29 @@ class XabberGroupsPlugin(GajimPlugin):
         stanza_send.getTag('pubsub').getTag('publish').getTag('item').getTag('data').setData(avatar_data)
         app.connections[account].connection.send(stanza_send, now=True)
 
+
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_for_create_group_chat(self, myjid, data):
+        server_domain = 'xmppdev01.xabber.com'
+        stanza_send = nbxmpp.Iq(to=server_domain, typ='set')
+        stanza_send.setAttr('id', 'CreateXGroupChat1')
+        stanza_send.setTag('create').setNamespace(XABBER_GC)
+        if data['jid']:
+            stanza_send.getTag('create').setTag('localpart').setData(data['jid'])
+        stanza_send.getTag('create').setTag('name').setData(data['name'])
+        stanza_send.getTag('create').setTag('anonymous').setData(data['is_anon'])
+        stanza_send.getTag('create').setTag('searchable').setData(data['is_search'])
+        stanza_send.getTag('create').setTag('discoverable').setData(data['is_discov'])
+        stanza_send.getTag('create').setTag('description').setData(data['desc'])
+        stanza_send.getTag('create').setTag('access').setData(data['access'])
+        # TODO <domains>
+        stanza_send.getTag('create').setTag('collect-avatar').setData(data['is_collect'])
+        account = get_account_from_jid(myjid)
+        app.connections[account].connection.send(stanza_send, now=True)
+
     @log_calls('XabberGroupsPlugin')
     def send_ask_for_rights(self, myjid, room, id='', type=''):
-
         acc = get_account_from_jid(myjid)
-
         stanza_send = nbxmpp.Iq(to=room, typ='get')
         stanza_send.setAttr('id', type)
         stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
@@ -179,8 +198,34 @@ class XabberGroupsPlugin(GajimPlugin):
         app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
-    def send_set_user_rights(self, myjid, room, user_id, rights):
+    def send_set_user_name(self, myjid, room, user_id, new_name):
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+        stanza_send.getTag('query').setAttr('id', str(user_id))
+        stanza_send.getTag('query').setTag('nickname').setData(new_name)
+        acc = get_account_from_jid(myjid)
+        app.connections[acc].connection.send(stanza_send, now=True)
 
+    @log_calls('XabberGroupsPlugin')
+    def send_set_user_badge(self, myjid, room, user_id, new_badge):
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+        stanza_send.getTag('query').setAttr('id', str(user_id))
+        stanza_send.getTag('query').setTag('badge').setData(new_badge)
+        acc = get_account_from_jid(myjid)
+        app.connections[acc].connection.send(stanza_send, now=True)
+
+    @log_calls('XabberGroupsPlugin')
+    def send_set_user_kick(self, myjid, room, user_id):
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
+        stanza_send.getTag('query').setTagAttr('item', 'id', str(user_id))
+        stanza_send.getTag('query').getTag('item').setAttr('role', 'none')
+        acc = get_account_from_jid(myjid)
+        app.connections[acc].connection.send(stanza_send, now=True)
+
+    @log_calls('XabberGroupsPlugin')
+    def send_set_user_rights(self, myjid, room, user_id, rights):
         stanza_send = nbxmpp.Iq(to=room, typ='set')
         stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
         stanza_send.getTag('query').setTagAttr('item', 'id', str(user_id))
@@ -244,10 +289,24 @@ class XabberGroupsPlugin(GajimPlugin):
         except: on_avatar_data_get = False
         try: on_userdata_get = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
         except: on_userdata_get = False
-        try: on_uploading_avatar_response = (obj.stanza.getAttr('id') == 'xgcPublish1')
-        except: on_uploading_avatar_response = False
-        try: on_publish_response = (obj.stanza.getAttr('id') == 'xgcPublish2')
-        except: on_publish_response = False
+        on_uploading_avatar_response = (obj.stanza.getAttr('id') == 'xgcPublish1')
+        on_publish_response = (obj.stanza.getAttr('id') == 'xgcPublish2')
+        on_create_groupchat_response = (obj.stanza.getAttr('id') == 'CreateXGroupChat1')
+
+        if on_create_groupchat_response:
+            iserror = obj.stanza.getTag('error')
+            if not iserror:
+                print('hello masafassadasdasdasda\n'*50)
+                item = obj.stanza.getTag('created')
+                jid = item.getTag('jid').getData()
+                myjid = obj.stanza.getAttr('to')
+                print(myjid)
+                addallowjid(jid)
+                account = get_account_from_jid(myjid)
+                print(account)
+                if account:
+                    stanza_send = nbxmpp.Presence(to=jid, typ='subscribe', frm=myjid)
+                    app.connections[account].connection.send(stanza_send, now=True)
 
         if on_avatar_data_get:
             # check is iq from xabber gc
@@ -1094,6 +1153,8 @@ class Base(object):
             return
 
     def create_buttons(self, chat_control):
+
+        # ========================== chat text editor ========================== #
         self.actions_hbox = chat_control.xml.get_object('hbox')
 
         css = '''#Xbutton {
@@ -1199,6 +1260,51 @@ class Base(object):
         self.hide_all_actions()
         self.normalize_action_hbox()
 
+        # ========================== chat xgc menu ========================== #
+        css = '''
+        #XGCmenubutton{
+        margin: 0 5px;
+        padding: 0 10px;
+        color: #9E9E9E;
+        background-color: #FFFFFF;
+        background: #FFFFFF;
+        border: none;
+        border-radius: 2px;
+        font-size: 22px;
+        font-weight: bold;
+        }
+        #XGCmenubutton:hover{
+        color: #616161;
+        background-color: #E0E0E0;
+        background: #E0E0E0;
+        }
+        '''
+        topmenu = chat_control.xml.get_object('hbox3004')
+        group_chat_menubutton = Gtk.Button(' '+u"\u2630"+' ')
+        topmenu.add(group_chat_menubutton)
+        topmenu.reorder_child(group_chat_menubutton, 0)
+        group_chat_add_user = Gtk.Button('+' + u"\U0001F464")
+        topmenu.add(group_chat_add_user)
+
+        group_chat_menubutton.set_size_request(48, -1)
+        group_chat_add_user.set_size_request(48, -1)
+        gtkgui_helpers.add_css_to_widget(group_chat_menubutton, css)
+        group_chat_menubutton.set_name('XGCmenubutton')
+        gtkgui_helpers.add_css_to_widget(group_chat_add_user, css)
+        group_chat_add_user.set_name('XGCmenubutton')
+
+        chatc_control_box = chat_control.xml.get_object('vbox2')
+        pinned_message = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        pinlabel = Gtk.Label(u"\U0001F4CC")
+        self.pinned_nick = Gtk.Label('nickname')
+        self.pinned_datetime = Gtk.Label('September 18, datetime ok da')
+        self.pinned_message_text = Gtk.Label('heyyy, how r u???')
+
+        pinlabel.set_size_request(64, 54)
+        pinned_message.pack_start(pinlabel, False, False, 0)
+        chatc_control_box.add(pinned_message)
+        chatc_control_box.reorder_child(pinned_message, 2)
+        pinned_message.hide()
 
     def resize_actions(self, widget, r):
         self.button_cancel.set_property("margin-left", r.width - 420)
