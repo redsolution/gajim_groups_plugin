@@ -5,7 +5,7 @@ import nbxmpp
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango, Gio
-from groups_plugin.plugin_dialogs import UserDataDialog, CreateGroupchatDialog
+from groups_plugin.plugin_dialogs import UserDataDialog, CreateGroupchatDialog, InviteMemberDialog
 from nbxmpp import simplexml
 from nbxmpp.protocol import JID
 from gajim import dialogs
@@ -153,6 +153,54 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'message': obj.message,
                                         'ts': datetime.datetime.now().isoformat()
                                         })
+
+
+    @log_calls('XabberGroupsPlugin')
+    def send_invite_to_chatroom(self, chat_jid, from_jid, invite_jid, invite_by_chat, reason):
+        print('hello\n'*50)
+        '''
+        by chat
+        <iq from="maksim.batyatin@redsolution.com" type="set" to="testinvite22@xmppdev01.xabber.com" id="75a557fb-671b-4c8a-826a-95b69ff9c98a:sendIQ">
+           <invite>
+              <jid>devmuler@jabber.ru</jid>
+              <send>true</send>
+              <reason>Invitation to a group chat</reason>
+           </invite>
+        </iq>
+        
+        <iq xmlns="jabber:client" to="test_invite_devmule@xmppdev01.xabber.com" from="devmuler@jabber.ru" type="set" id="74356cef-9839-4482-b158-75212e8568f2">
+           <invite>
+              <jid>maksim.batyatin@redsolution.com</jid>
+              <send>true</send>
+              <reason>invite</reason>
+           </invite>
+        </iq>
+
+        by user
+        <message from='juliet@capulet.it/balcony' to='romeo@montague.it'>
+          <invite xmlns='http://xabber.com/protocol/groupchat#invite' jid='mychat@capulet.it'>
+            <reason>Это нужно обсудить</reason>
+          </invite>
+          <body>Для вступления в групповой чат добавьте mychat@capulet.it в свой список контактов.</body>
+        </message>
+
+        '''
+        if invite_by_chat:
+            stanza_send = nbxmpp.Iq(to=chat_jid, typ='set', frm=from_jid)
+            stanza_send.setTag('invite')  # .setNamespace('http://jabber.org/protocol/groupchat#invite')
+            stanza_send.getTag('invite').setTag('jid').setData(invite_jid)
+            stanza_send.getTag('invite').setTag('send').setData('true')
+            stanza_send.getTag('invite').setTag('reason').setData(reason)
+            account = get_account_from_jid(from_jid)
+            app.connections[account].connection.send(stanza_send, now=True)
+
+        else:
+            stanza_send = nbxmpp.Message(to=invite_jid, frm=from_jid)
+            stanza_send.setTag('invite').setNamespace('http://jabber.org/protocol/groupchat#invite')
+            stanza_send.getTag('invite').setAttr('jid', chat_jid)
+            stanza_send.getTag('invite').setTag('reason').setData(reason)
+            account = get_account_from_jid(from_jid)
+            app.connections[account].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def send_publish_avatar_data(self, avatar_data, hash, to_jid, from_jid, u_id = None):
@@ -699,7 +747,13 @@ class Base(object):
         #self.box.set_size_request(self.textview.tv.get_allocated_width(), self.textview.tv.get_allocated_height())
         self.scrolled = Gtk.ScrolledWindow()
         self.scrolled.add(self.box)
-
+        '''
+        self.box = Gtk.Box(False, 0, orientation=Gtk.Orientation.VERTICAL)
+        self.scrolled = Gtk.ScrolledWindow()
+        chatc_control_box = chat_control.xml.get_object('vbox2')
+        # chatc_control_box.add(self.box)
+        chatc_control_box.pack_start(self.scrolled, True, True, 0)
+        chatc_control_box.reorder_child(self.box, 2)'''
         self.textview.tv.connect_after('size-allocate', self.resize)
 
         self.textview.tv.add(self.scrolled)
@@ -1282,8 +1336,8 @@ class Base(object):
         topmenu = chat_control.xml.get_object('hbox3004')
         group_chat_menubutton = Gtk.Button(' '+u"\u2630"+' ')
         topmenu.add(group_chat_menubutton)
-        topmenu.reorder_child(group_chat_menubutton, 0)
         group_chat_add_user = Gtk.Button('+' + u"\U0001F464")
+        group_chat_add_user.connect('clicked', self.do_invite_member_dialog)
         topmenu.add(group_chat_add_user)
 
         group_chat_menubutton.set_size_request(48, -1)
@@ -1293,7 +1347,6 @@ class Base(object):
         gtkgui_helpers.add_css_to_widget(group_chat_add_user, css)
         group_chat_add_user.set_name('XGCmenubutton')
 
-        chatc_control_box = chat_control.xml.get_object('vbox2')
         pinned_message = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         pinlabel = Gtk.Label(u"\U0001F4CC")
         self.pinned_nick = Gtk.Label('nickname')
@@ -1302,9 +1355,14 @@ class Base(object):
 
         pinlabel.set_size_request(64, 54)
         pinned_message.pack_start(pinlabel, False, False, 0)
-        chatc_control_box.add(pinned_message)
-        chatc_control_box.reorder_child(pinned_message, 2)
+        # chatc_control_box = chat_control.xml.get_object('vbox2')
+        # chatc_control_box.add(pinned_message)
+        # chatc_control_box.reorder_child(pinned_message, 2)
         pinned_message.hide()
+
+    def do_invite_member_dialog(self, widget):
+        dialog = InviteMemberDialog(self, self.plugin, allowjids, self.default_avatar)
+        response = dialog.popup()
 
     def resize_actions(self, widget, r):
         self.button_cancel.set_property("margin-left", r.width - 420)
