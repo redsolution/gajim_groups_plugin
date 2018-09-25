@@ -156,49 +156,24 @@ class XabberGroupsPlugin(GajimPlugin):
 
 
     @log_calls('XabberGroupsPlugin')
-    def send_invite_to_chatroom(self, chat_jid, from_jid, invite_jid, invite_by_chat, reason):
-        print('hello\n'*50)
-        '''
-        by chat
-        <iq from="maksim.batyatin@redsolution.com" type="set" to="testinvite22@xmppdev01.xabber.com" id="75a557fb-671b-4c8a-826a-95b69ff9c98a:sendIQ">
-           <invite>
-              <jid>devmuler@jabber.ru</jid>
-              <send>true</send>
-              <reason>Invitation to a group chat</reason>
-           </invite>
-        </iq>
-        
-        <iq xmlns="jabber:client" to="test_invite_devmule@xmppdev01.xabber.com" from="devmuler@jabber.ru" type="set" id="74356cef-9839-4482-b158-75212e8568f2">
-           <invite>
-              <jid>maksim.batyatin@redsolution.com</jid>
-              <send>true</send>
-              <reason>invite</reason>
-           </invite>
-        </iq>
-
-        by user
-        <message from='juliet@capulet.it/balcony' to='romeo@montague.it'>
-          <invite xmlns='http://xabber.com/protocol/groupchat#invite' jid='mychat@capulet.it'>
-            <reason>Это нужно обсудить</reason>
-          </invite>
-          <body>Для вступления в групповой чат добавьте mychat@capulet.it в свой список контактов.</body>
-        </message>
-
-        '''
+    def send_invite_to_chatroom(self, chat_jid, from_jid, invite_jid, invite_by_chat, send_my_data, reason):
         if invite_by_chat:
             stanza_send = nbxmpp.Iq(to=chat_jid, typ='set', frm=from_jid)
-            stanza_send.setTag('invite')  # .setNamespace('http://jabber.org/protocol/groupchat#invite')
+            stanza_send.setTag('invite').setNamespace('http://xabber.com/protocol/groupchat#invite')
             stanza_send.getTag('invite').setTag('jid').setData(invite_jid)
-            stanza_send.getTag('invite').setTag('send').setData('true')
+            if send_my_data:
+                stanza_send.getTag('invite').setTag('send').setData('true')
             stanza_send.getTag('invite').setTag('reason').setData(reason)
             account = get_account_from_jid(from_jid)
             app.connections[account].connection.send(stanza_send, now=True)
 
         else:
-            stanza_send = nbxmpp.Message(to=invite_jid, frm=from_jid)
-            stanza_send.setTag('invite').setNamespace('http://jabber.org/protocol/groupchat#invite')
+            join_text = _('To join a group chat, add ' + chat_jid + ' to your contact list.')
+            stanza_send = nbxmpp.Message(to=invite_jid, typ='chat', frm=from_jid)
+            stanza_send.setTag('invite').setNamespace('http://xabber.com/protocol/groupchat#invite')
             stanza_send.getTag('invite').setAttr('jid', chat_jid)
             stanza_send.getTag('invite').setTag('reason').setData(reason)
+            stanza_send.setTag('body').setData(join_text)
             account = get_account_from_jid(from_jid)
             app.connections[account].connection.send(stanza_send, now=True)
 
@@ -530,7 +505,7 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         get incoming messages, check it, do smth with them
         '''
-        cr_invite = obj.stanza.getTag('invite', namespace=XABBER_GC)
+        cr_invite = obj.stanza.getTag('invite', namespace='http://xabber.com/protocol/groupchat#invite')
         cr_message = obj.stanza.getTag('x', namespace=XABBER_GC)
         if cr_invite:
             self.invite_to_chatroom_recieved(obj)
@@ -540,11 +515,21 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):
+        '''
+        <message xml:lang="ru" to="maksim.batyatin@redsolution.com/gajim.42SK1ULX" from="devmuler@jabber.ru/gajim.9F53IQTV" type="chat" id="5f560888-14bb-49ba-a22e-097e496153be">
+           <archived xmlns="urn:xmpp:mam:tmp" by="maksim.batyatin@redsolution.com" id="1537875592010574" />
+           <stanza-id xmlns="urn:xmpp:sid:0" by="maksim.batyatin@redsolution.com" id="1537875592010574" />
+           <invite xmlns="http://xabber.com/protocol/groupchat#invite" jid="testcreate@xmppdev01.xabber.com">
+              <reason>dgjfhjh</reason>
+           </invite>
+           <body>To join a group chat, add testcreate@xmppdev01.xabber.com to your contact list.</body>
+        </message>
+        '''
         myjid = obj.stanza.getAttr('to')
         myjid = app.get_jid_without_resource(str(myjid))
-        jid = obj.stanza.getTag('invite', namespace=XABBER_GC).getAttr('jid')
+        jid = obj.stanza.getTag('invite').getAttr('jid')
         if not jid:
-            jid = obj.stanza.getTag('invite', namespace=XABBER_GC).getTag('jid').getData()
+            jid = obj.stanza.getTag('invite').getTag('jid').getData()
 
         def on_ok():
             addallowjid(jid)
@@ -560,7 +545,7 @@ class XabberGroupsPlugin(GajimPlugin):
             return
 
         name = obj.jid
-        reason = obj.stanza.getTag('invite', namespace=XABBER_GC).getTag('reason').getData()
+        reason = obj.stanza.getTag('invite').getTag('reason').getData()
         pritext = _('invitation to xabber-chatroom')
         sectext = _('%(name)s  invites you to xabber chatroom. \n'
                     'Room: %(jid)s \n'
@@ -1317,7 +1302,7 @@ class Base(object):
         # ========================== chat xgc menu ========================== #
         css = '''
         #XGCmenubutton{
-        margin: 0 5px;
+        margin: 6px 2px;
         padding: 0 10px;
         color: #9E9E9E;
         background-color: #FFFFFF;
@@ -1326,17 +1311,31 @@ class Base(object):
         border-radius: 2px;
         font-size: 22px;
         font-weight: bold;
+        opacity: 0.4;
         }
         #XGCmenubutton:hover{
         color: #616161;
         background-color: #E0E0E0;
         background: #E0E0E0;
+        opacity: 0.7;
         }
         '''
+
         topmenu = chat_control.xml.get_object('hbox3004')
-        group_chat_menubutton = Gtk.Button(' '+u"\u2630"+' ')
+        group_chat_menubutton = Gtk.Button()
+        file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+        file = os.path.join(file, 'icon-menu-alt.png')
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 16, 16, False)
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        group_chat_menubutton.add(image)
         topmenu.add(group_chat_menubutton)
-        group_chat_add_user = Gtk.Button('+' + u"\U0001F464")
+
+        group_chat_add_user = Gtk.Button()
+        file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+        file = os.path.join(file, 'icon-add-user.png')
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 16, 16, False)
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        group_chat_add_user.add(image)
         group_chat_add_user.connect('clicked', self.do_invite_member_dialog)
         topmenu.add(group_chat_add_user)
 

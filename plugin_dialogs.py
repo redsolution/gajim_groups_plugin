@@ -634,6 +634,9 @@ class InviteMemberDialog(Gtk.Dialog):
             eventbox = Gtk.EventBox()
             eventbox.connect('button-press-event', self.on_user_clicked, eventbox, data_jid)
             eventbox.add(hbox)
+            name.show()
+            jid.show()
+            vbox.show()
             eventbox.show()
 
             listbox.add(eventbox)
@@ -695,15 +698,23 @@ class InviteMemberDialog(Gtk.Dialog):
         self.reason.set_margin_bottom(20)
 
         self.invite_by_chat = Gtk.CheckButton.new_with_label(_('Invite by group chat'))
+        self.invite_by_chat.set_active(True)
         self.invite_by_chat.set_size_request(-1, 32)
         self.invite_by_chat.set_margin_left(20)
         self.invite_by_chat.set_margin_right(20)
+
+        self.show_my_data = Gtk.CheckButton.new_with_label(_('Send my data'))
+        self.show_my_data.set_size_request(-1, 32)
+        self.show_my_data.set_margin_top(8)
+        self.show_my_data.set_margin_left(20)
+        self.show_my_data.set_margin_right(20)
 
         box = self.get_content_area()
         box.pack_start(self.search, False, True, 0)
         box.pack_start(scrolled, True, True, 0)
         box.pack_start(self.reason, False, True, 0)
         box.pack_start(self.invite_by_chat, False, True, 0)
+        box.pack_start(self.show_my_data, False, True, 0)
         box.pack_start(button_hbox, False, True, 0)
 
         self.search.connect("changed", self.edit_changed)
@@ -736,13 +747,14 @@ class InviteMemberDialog(Gtk.Dialog):
 
     def send_invite(self, eb, event):
         invite_by_chat = self.invite_by_chat.get_active()
+        send_my_data = self.show_my_data.get_active()
         reason = self.reason.get_text()
         to_jid = self.chat_control.room_jid
         from_jid = self.chat_control.cli_jid
 
         for jid in self.CHOOSED_USERS:
             invite_jid = jid
-            self.plugin.send_invite_to_chatroom(to_jid, from_jid, invite_jid, invite_by_chat, reason)
+            self.plugin.send_invite_to_chatroom(to_jid, from_jid, invite_jid, invite_by_chat, send_my_data, reason)
 
         self.destroy()
 
