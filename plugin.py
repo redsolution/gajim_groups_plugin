@@ -74,10 +74,12 @@ class XabberGroupsPlugin(GajimPlugin):
         self.config_dialog = None
         self.controls = {}
         self.userdata = {}
+        self.room_data = {}
         self.history_window_control = None
 
         self.events_handlers = {
             'decrypted-message-received': (ged.OUT_POSTGUI1, self._nec_decrypted_message_received),
+            'raw-message-received': (ged.OUT_POSTGUI1, self._raw_message_received),
             'raw-iq-received': (ged.OUT_PRECORE, self._nec_iq_received),
             'message-outgoing': (ged.OUT_POSTGUI1, self._nec_message_outgoing),
             'presence-received': (ged.POSTGUI, self.presence_received)
@@ -112,6 +114,7 @@ class XabberGroupsPlugin(GajimPlugin):
         iter_ = iters[0]
         is_group = obj.stanza.getTag('x', namespace=XABBER_GC)
         if is_group:
+            # set icon in roster, add jid to group list
             addallowjid(obj.jid)
             icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gc_icon.png")
             pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
@@ -121,9 +124,63 @@ class XabberGroupsPlugin(GajimPlugin):
             roster.model[iter_][0] = image
 
             # send ask for user rights
-            room = app.get_jid_without_resource(str(obj.stanza.getAttr('from')))
+            room = is_group.getTag('jid').getData()
             myjid = app.get_jid_without_resource(str(obj.stanza.getAttr('to')))
+
             self.send_ask_for_rights(myjid, room, type='XGCUserdata')
+
+            # get room data
+            name = is_group.getTag('name').getData()
+            anonymous = is_group.getTag('anonymous').getData()
+            searchable = is_group.getTag('searchable').getData()
+            model = is_group.getTag('model').getData()
+            description = is_group.getTag('description').getData()
+            pinned_message = is_group.getTag('pinned-message').getData()
+
+            old_pin = None
+            if room in self.room_data:
+                old_pin = self.room_data[room]['pinned']
+
+            # update room data
+            room_data = {'name': name,
+                         'anonymous': anonymous,
+                         'searchable': searchable,
+                         'model': model,
+                         'description': description,
+                         'pinned': pinned_message}
+            if room not in self.room_data:
+                self.room_data[room] = {}
+            self.room_data[room] = room_data
+
+            # if pinned send ask for pinned
+            if pinned_message:
+                self.send_ask_for_pinned_message(myjid, room, pinned_message)
+
+            # if pinned is empty, clear pinned
+            else:
+                acc = get_account_from_jid(myjid)
+                if acc in self.controls:
+                    if room in self.controls[acc]:
+                        self.controls[acc][room].set_unpin_message()
+
+
+
+        '''
+            <presence to="maksim.batyatin@redsolution.com/gajim.42SK1ULX" from="redsolution@xmppdev01.xabber.com/Groupchat">
+               <x xmlns="http://xabber.com/protocol/groupchat">
+                  <jid>redsolution@xmppdev01.xabber.com</jid>
+                  <name>redsolution</name>
+                  <anonymous>false</anonymous>
+                  <searchable>true</searchable>
+                  <model>open</model>
+                  <description>Group Chat</description>
+                  <pinned-message>1537273099998861</pinned-message>
+                  <contacts />
+                  <domains />
+               </x>
+               <collect xmlns="http://xabber.com/protocol/groupchat">yes</collect>
+            </presence>
+        '''
 
     @log_calls('ClientsIconsPlugin')
     def connect_with_roster_draw_contact(self, roster, jid, account, contact):
@@ -315,7 +372,7 @@ class XabberGroupsPlugin(GajimPlugin):
         on_uploading_avatar_response = (obj.stanza.getAttr('id') == 'xgcPublish1')
         on_publish_response = (obj.stanza.getAttr('id') == 'xgcPublish2')
         on_create_groupchat_response = (obj.stanza.getAttr('id') == 'CreateXGroupChat1')
-
+        
         if on_create_groupchat_response:
             iserror = obj.stanza.getTag('error')
             if not iserror:
@@ -390,7 +447,8 @@ class XabberGroupsPlugin(GajimPlugin):
                 myjid = obj.stanza.getAttr('to')
                 myjid = app.get_jid_without_resource(str(myjid))
                 print(room, myjid)
-                self.userdata[room] = {}
+                if room not in self.userdata:
+                    self.userdata[room] = {}
                 self.userdata[room][myjid] = userdata
                 # self.controls[obj.account][room].remove_message_selection()
                 # doesnt work
@@ -512,19 +570,60 @@ class XabberGroupsPlugin(GajimPlugin):
         elif cr_message:
             self.xabber_message_recieved(obj)
 
+    @log_calls('XabberGroupsPlugin')
+    def _raw_message_received(self, obj):
+        '''
+        <message to='maksim.batyatin@redsolution.com/gajim.42SK1ULX' from='redsolution@xmppdev01.xabber.com'>
+            <result  xmlns='urn:xmpp:mam:2' id='1537273099998861'>
+                <forwarded xmlns='urn:xmpp:forward:0'>
+                    <message xmlns='jabber:client' to='redsolution@xmppdev01.xabber.com' from='redsolution@xmppdev01.xabber.com' type='chat' id='008be81e-4d55-4e5c-993b-e2ffaf01751c'>
+                        <previous-id xmlns='http://xabber.com/protocol/previous'/>
+                        <archived  xmlns='urn:xmpp:mam:tmp' by='redsolution@xmppdev01.xabber.com' id='1537273099998861'/>
+                        <stanza-id  xmlns='urn:xmpp:sid:0' by='redsolution@xmppdev01.xabber.com' id='1537273099998861'/>
+                        <time  xmlns='http://xabber.com/protocol/unique' by='redsolution@xmppdev01.xabber.com' stamp='2018-09-18T12:18:19.998861Z'/>
+                        <x xmlns='http://xabber.com/protocol/groupchat'>
+                            <id>v1fa31l2q9z94fhj</id>
+                            <jid>andrew.nenakhov@redsolution.com</jid>
+                            <badge/>
+                            <nickname>Andrew Nenakhov</nickname>
+                            <role>owner</role>
+                            <metadata xmlns='urn:xmpp:avatar:metadata'/>
+                            <body xmlns='urn:ietf:params:xml:ns:xmpp-streams' xml:lang=''>Это супер-пупер важный корпоративный чат, ведите себя прилично и соблюдайте правила общения. Тем, кто будет их нарушать будут приделаны разные обидные бейджи.
+                            </body>
+                        </x>
+                        <markable xmlns='urn:xmpp:chat-markers:0'/>
+                        <body xml:lang='en'>Andrew Nenakhov:
+                        Это супер-пупер важный корпоративный чат, ведите себя прилично и соблюдайте правила общения. Тем, кто будет их нарушать будут приделаны разные обидные бейджи.</body>
+                    </message>
+                    <delay xmlns='urn:xmpp:delay' from='xmppdev01.xabber.com' stamp='2018-09-18T12:18:19.998861Z'/>
+                </forwarded>
+            </result>
+        </message>
+        '''
+        room = obj.stanza.getAttr('from')
+        myjid = obj.stanza.getAttr('to')
+        myjid = app.get_jid_without_resource(str(myjid))
+        try:
+            message = obj.stanza.getTag('result').getTag('forwarded').getTag('message')
+            timestamp = message.getTag('time').getAttr('stamp')
+            nickname = message.getTag('x').getTag('nickname').getData()
+            body = message.getTag('x').getTag('body').getData()
+            account = get_account_from_jid(myjid)
+
+            dtdate = timestamp.split('T')[0]
+            dtdate = str(dtdate)[2:10]
+            dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
+            dtdate = dt.strftime("%d %B, %Y")
+            dttime = timestamp.split('T')[1]
+            dttime = dttime[:8]
+            timestamp = dtdate + ' ' + dttime
+
+            self.controls[account][room].set_pin_message(nickname, timestamp, body)
+        except: pass
+
 
     @log_calls('XabberGroupsPlugin')
     def invite_to_chatroom_recieved(self, obj):
-        '''
-        <message xml:lang="ru" to="maksim.batyatin@redsolution.com/gajim.42SK1ULX" from="devmuler@jabber.ru/gajim.9F53IQTV" type="chat" id="5f560888-14bb-49ba-a22e-097e496153be">
-           <archived xmlns="urn:xmpp:mam:tmp" by="maksim.batyatin@redsolution.com" id="1537875592010574" />
-           <stanza-id xmlns="urn:xmpp:sid:0" by="maksim.batyatin@redsolution.com" id="1537875592010574" />
-           <invite xmlns="http://xabber.com/protocol/groupchat#invite" jid="testcreate@xmppdev01.xabber.com">
-              <reason>dgjfhjh</reason>
-           </invite>
-           <body>To join a group chat, add testcreate@xmppdev01.xabber.com to your contact list.</body>
-        </message>
-        '''
         myjid = obj.stanza.getAttr('to')
         myjid = app.get_jid_without_resource(str(myjid))
         jid = obj.stanza.getTag('invite').getAttr('jid')
@@ -557,6 +656,22 @@ class XabberGroupsPlugin(GajimPlugin):
 
     @log_calls('XabberGroupsPlugin')
     def xabber_message_recieved(self, obj):
+        # TODO carbons
+        '''
+        <message to="maksim.batyatin@redsolution.com/gajim.42SK1ULX" from="maksim.batyatin@redsolution.com" type="chat">
+           <sent xmlns="urn:xmpp:carbons:2">
+              <forwarded xmlns="urn:xmpp:forward:0">
+                 <message xmlns="jabber:client" xml:lang="en" to="4test@xmppdev01.xabber.com" from="maksim.batyatin@redsolution.com/xabber-web-7822b4e5-3f6c-4f61" type="chat" id="3b77dae1-7a2a-4fbb-9353-09bf6cd4578e">
+                    <archived xmlns="urn:xmpp:mam:tmp" by="maksim.batyatin@redsolution.com" id="1537945809408098" />
+                    <stanza-id xmlns="urn:xmpp:sid:0" by="maksim.batyatin@redsolution.com" id="1537945809408098" />
+                    <markable xmlns="urn:xmpp:chat-markers:0" />
+                    <origin-id xmlns="urn:xmpp:sid:0" id="3b77dae1-7a2a-4fbb-9353-09bf6cd4578e" />
+                    <body>test</body>
+                 </message>
+              </forwarded>
+           </sent>
+        </message>
+        '''
         room = obj.jid
         addallowjid(room)
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
@@ -649,14 +764,14 @@ class XabberGroupsPlugin(GajimPlugin):
             self.send_call_single_avatar(account, room, userid, id)
 
     @log_calls('XabberGroupsPlugin')
-    def send_call_single_avatar(self, account, room_jid, u_id, av_id, stanza_id=''):
+    def send_call_single_avatar(self, account, room, u_id, av_id, stanza_id=''):
         try:
             # error if avatar is not exist
             dir = AVATARS_DIR + '/' + av_id + '.jpg'
             k = open(os.path.normpath(dir))
             return True
         except:
-            stanza_send = nbxmpp.Iq(to=room_jid, typ='get')
+            stanza_send = nbxmpp.Iq(to=room, typ='get')
             stanza_send.setAttr('id', stanza_id)
             stanza_send.setTag('pubsub').setNamespace('http://jabber.org/protocol/pubsub')
             stanza_send.getTag('pubsub').setTagAttr('items', 'node', ('urn:xmpp:avatar:data#'+str(u_id)))
@@ -664,9 +779,47 @@ class XabberGroupsPlugin(GajimPlugin):
             app.connections[account].connection.send(stanza_send, now=True)
             return False
 
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_for_pinned_message(self, myjid, room, pinned_id):
+        '''
+        <iq type='set' to='juliet@capulet.lit’ id='juliet1'>
+            <query xmlns='urn:xmpp:mam:2'>
+                <x xmlns='jabber:x:data' type='submit'>
+                    <field var='FORM_TYPE' type='hidden'>
+                        <value>urn:xmpp:mam:2</value>
+                    </field>
+                    <field var='{urn:xmpp:sid:0}stanza-id'>
+                        <value>25475679764576348745</value>
+                    </field>
+                </x>
+            </query>
+        </iq>
+
+        item = stanza_send.getTag('query').getTag('item').addChild('restriction')
+        '''
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setAttr('id', 'XGCPinnedMessage')
+        stanza_send.setTag('query').setNamespace('urn:xmpp:mam:2')
+        stanza_send.getTag('query').setTag('x').setNamespace('jabber:x:data')
+        stanza_send.getTag('query').getTag('x').setAttr('type', 'submit')
+
+        field = stanza_send.getTag('query').getTag('x').addChild('field')
+        field.setAttr('var', 'FORM_TYPE')
+        field.setAttr('type', 'hidden')
+        field.setTag('value').setData('urn:xmpp:mam:2')
+
+        field2 = stanza_send.getTag('query').getTag('x').addChild('field')
+        field2.setAttr('var', '{urn:xmpp:sid:0}stanza-id')
+        field2.setTag('value').setData(str(pinned_id))
+
+        account = get_account_from_jid(myjid)
+        app.connections[account].connection.send(stanza_send, now=True)
+
+        # TODO StanzaReceivedEvent
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
+        # TODO send prezence to ask if data changed
         account = chat_control.contact.account.name
         room = chat_control.contact.jid
         acc_jid = app.get_jid_from_account(account)
@@ -684,6 +837,11 @@ class XabberGroupsPlugin(GajimPlugin):
                 self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
             except:
                 self.send_ask_for_rights(acc_jid, room, type='XGCUserdata')
+
+            if room in self.room_data:
+                if self.room_data[room]['pinned']:
+                    self.send_ask_for_pinned_message(acc_jid, room, self.room_data[room]['pinned'])
+
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -1242,9 +1400,6 @@ class Base(object):
         av_image.set_name('XCAvatar')
         self.user_avatar.add(av_image)
 
-
-
-
         # buttons configs
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
         self.button_copy.set_tooltip_text(_('copy text from messages widgets (press ctrl+v to paste it)'))
@@ -1300,7 +1455,7 @@ class Base(object):
         self.normalize_action_hbox()
 
         # ========================== chat xgc menu ========================== #
-        css = '''
+        css_button = '''
         #XGCmenubutton{
         margin: 6px 2px;
         padding: 0 10px;
@@ -1315,8 +1470,6 @@ class Base(object):
         }
         #XGCmenubutton:hover{
         color: #616161;
-        background-color: #E0E0E0;
-        background: #E0E0E0;
         opacity: 0.7;
         }
         '''
@@ -1341,23 +1494,88 @@ class Base(object):
 
         group_chat_menubutton.set_size_request(48, -1)
         group_chat_add_user.set_size_request(48, -1)
-        gtkgui_helpers.add_css_to_widget(group_chat_menubutton, css)
+        gtkgui_helpers.add_css_to_widget(group_chat_menubutton, css_button)
         group_chat_menubutton.set_name('XGCmenubutton')
-        gtkgui_helpers.add_css_to_widget(group_chat_add_user, css)
+        gtkgui_helpers.add_css_to_widget(group_chat_add_user, css_button)
         group_chat_add_user.set_name('XGCmenubutton')
 
-        pinned_message = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        pinlabel = Gtk.Label(u"\U0001F4CC")
-        self.pinned_nick = Gtk.Label('nickname')
-        self.pinned_datetime = Gtk.Label('September 18, datetime ok da')
-        self.pinned_message_text = Gtk.Label('heyyy, how r u???')
+        # ========================== pinned message  ========================== #
 
+        self.pinned_message = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+
+        pinned_name_badge_role = Gtk.Grid()
+        self.pinned_nick = Gtk.Label('nickname')
+        css = '''#info_name {
+        color: #D32F2F;
+        font-size: 12px;
+        margin-right: 4px;
+        margin-top: 10px;}'''
+        gtkgui_helpers.add_css_to_widget(self.pinned_nick, css)
+        self.pinned_nick.set_name('info_name')
+
+        self.pinned_datetime = Gtk.Label('September 18, datetime ok da')
+        css = '''#info_ts {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #666;}'''
+        gtkgui_helpers.add_css_to_widget(self.pinned_datetime, css)
+        self.pinned_datetime.set_name('info_ts')
+
+        pinned_name_badge_role.attach(self.pinned_nick, 0, 0, 1, 1)
+        pinned_name_badge_role.attach(self.pinned_datetime, 1, 0, 1, 1)
+
+        self.pinned_message_text = Gtk.Label('message text ok da')
+        css = '''#message_font_size {
+        font-size: 12px;
+        margin-top: 6px;
+        margin-bottom: 8px;}'''
+        gtkgui_helpers.add_css_to_widget(self.pinned_message_text, css)
+        self.pinned_message_text.set_name('message_font_size')
+        self.pinned_message_text.set_line_wrap(True)
+        self.pinned_message_text.set_justify(Gtk.Justification.LEFT)
+        self.pinned_message_text.set_halign(Gtk.Align.START)
+        self.pinned_message_text.set_ellipsize(Pango.EllipsizeMode.END)
+        pinned_message_text_grid = Gtk.Grid()
+        pinned_message_text_grid.add(self.pinned_message_text)
+
+        al_pinned_data = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        al_pinned_data.pack_start(pinned_name_badge_role, False, False, 0)
+        al_pinned_data.pack_start(pinned_message_text_grid, False, False, 0)
+
+        pinlabel = Gtk.Label(u"\U0001F4CC")
         pinlabel.set_size_request(64, 54)
-        pinned_message.pack_start(pinlabel, False, False, 0)
-        # chatc_control_box = chat_control.xml.get_object('vbox2')
-        # chatc_control_box.add(pinned_message)
-        # chatc_control_box.reorder_child(pinned_message, 2)
-        pinned_message.hide()
+        pinbutton = Gtk.Button(u"\u2A2F")
+        pinbutton.set_size_request(34, 34)
+        pinbutton.set_margin_left(10)
+        pinbutton.set_margin_right(10)
+        pinbutton.set_margin_top(10)
+        pinbutton.set_margin_bottom(10)
+        gtkgui_helpers.add_css_to_widget(pinbutton, css_button)
+        pinbutton.set_name('XGCmenubutton')
+
+        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        hbox.pack_start(pinlabel, False, False, 0)
+        hbox.pack_start(al_pinned_data, False, False, 0)
+
+        self.pinned_message.pack_start(hbox, True, True, 0)
+        self.pinned_message.pack_start(pinbutton, False, False, 0)
+        chat_control_box = chat_control.xml.get_object('vbox2')
+        chat_control_box.add(self.pinned_message)
+        chat_control_box.reorder_child(self.pinned_message, 2)
+
+        self.pinned_message.hide()
+
+    def set_pin_message(self, name, timestamp, message):
+        self.pinned_nick.set_text(name)
+        self.pinned_datetime.set_text(timestamp)
+        self.pinned_message_text.set_text(message.replace('\n', ' '))
+        self.pinned_message.show()
+
+    def set_unpin_message(self):
+        self.pinned_nick.set_text('')
+        self.pinned_datetime.set_text('')
+        self.pinned_message_text.set_text('')
+        self.pinned_message.hide()
 
     def do_invite_member_dialog(self, widget):
         dialog = InviteMemberDialog(self, self.plugin, allowjids, self.default_avatar)

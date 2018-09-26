@@ -682,7 +682,7 @@ class InviteMemberDialog(Gtk.Dialog):
         leftgrid.pack_start(Gtk.Label(''), True, True, 0)
         rightgrid.pack_start(btn_add, False, True, 0)
 
-        button_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=50)
+        button_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_hbox.set_margin_bottom(10)
         button_hbox.set_margin_left(20)
         button_hbox.set_margin_right(20)
