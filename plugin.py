@@ -372,18 +372,33 @@ class XabberGroupsPlugin(GajimPlugin):
         on_uploading_avatar_response = (obj.stanza.getAttr('id') == 'xgcPublish1')
         on_publish_response = (obj.stanza.getAttr('id') == 'xgcPublish2')
         on_create_groupchat_response = (obj.stanza.getAttr('id') == 'CreateXGroupChat1')
-        
+        on_get_pinned_message = (obj.stanza.getAttr('id') == 'XGCPinnedMessage')
+
+        '''
+        <iq from='4test2@xmppdev01.xabber.com' to='devmuler@jabber.ru/gajim.9F53IQTV' xml:lang='ru' type='result' id='XGCPinnedMessage'>
+        <fin xmlns='urn:xmpp:mam:2' complete='true'>
+        <set xmlns='http://jabber.org/protocol/rsm'>
+        <count>0</count>
+        </set>
+        </fin>
+        </iq>
+        '''
+        if on_get_pinned_message:
+            count = obj.stanza.getTag('fin', namespace='urn:xmpp:mam:2').getTag('set', namespace='http://jabber.org/protocol/rsm').getTag('count').getData()
+            room = obj.stanza.getAttr('from')
+            myjid = obj.stanza.getAttr('to')
+            if count == '0':
+                account = get_account_from_jid(myjid)
+                self.controls[account][room].set_unpin_message()
+
         if on_create_groupchat_response:
             iserror = obj.stanza.getTag('error')
             if not iserror:
-                print('hello masafassadasdasdasda\n'*50)
                 item = obj.stanza.getTag('created')
                 jid = item.getTag('jid').getData()
                 myjid = obj.stanza.getAttr('to')
-                print(myjid)
                 addallowjid(jid)
                 account = get_account_from_jid(myjid)
-                print(account)
                 if account:
                     stanza_send = nbxmpp.Presence(to=jid, typ='subscribe', frm=myjid)
                     app.connections[account].connection.send(stanza_send, now=True)
@@ -394,7 +409,6 @@ class XabberGroupsPlugin(GajimPlugin):
             base64avatar = item.getTag('data', namespace='urn:xmpp:avatar:data').getData()
             id = item.getAttr('id')
             avatar_loc = self.base64_to_image(base64avatar, id)
-            print(avatar_loc)
             if obj.stanza.getAttr('id') == 'xgcUserAvData1':
                 room = obj.stanza.getAttr('from')
                 myjid = obj.stanza.getAttr('to')
@@ -442,11 +456,9 @@ class XabberGroupsPlugin(GajimPlugin):
                             'av_id': av_id,
                             'role': role,
                             'rights': user_rights}
-                print('data\n'*10)
                 room = obj.stanza.getAttr('from')
                 myjid = obj.stanza.getAttr('to')
                 myjid = app.get_jid_without_resource(str(myjid))
-                print(room, myjid)
                 if room not in self.userdata:
                     self.userdata[room] = {}
                 self.userdata[room][myjid] = userdata
@@ -674,6 +686,7 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         room = obj.jid
         addallowjid(room)
+        stanza_id = obj.stanza.getAttr('id')
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
         userid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('id').getData()
         if not name:
@@ -698,6 +711,7 @@ class XabberGroupsPlugin(GajimPlugin):
             print('forwarded\n'*10)
             delay = forwarded.getTag('delay', namespace='urn:xmpp:delay').getAttr('stamp')
             fobj = forwarded.getTag('message')
+            fstanza_id = fobj.getAttr('id')
 
             fname = ''
             try: fname = fobj.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
@@ -799,18 +813,24 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         stanza_send = nbxmpp.Iq(to=room, typ='set')
         stanza_send.setAttr('id', 'XGCPinnedMessage')
-        stanza_send.setTag('query').setNamespace('urn:xmpp:mam:2')
-        stanza_send.getTag('query').setTag('x').setNamespace('jabber:x:data')
-        stanza_send.getTag('query').getTag('x').setAttr('type', 'submit')
 
-        field = stanza_send.getTag('query').getTag('x').addChild('field')
-        field.setAttr('var', 'FORM_TYPE')
-        field.setAttr('type', 'hidden')
-        field.setTag('value').setData('urn:xmpp:mam:2')
+        if pinned_id:
+            stanza_send.setTag('query').setNamespace('urn:xmpp:mam:2')
+            stanza_send.getTag('query').setTag('x').setNamespace('jabber:x:data')
+            stanza_send.getTag('query').getTag('x').setAttr('type', 'submit')
 
-        field2 = stanza_send.getTag('query').getTag('x').addChild('field')
-        field2.setAttr('var', '{urn:xmpp:sid:0}stanza-id')
-        field2.setTag('value').setData(str(pinned_id))
+            field = stanza_send.getTag('query').getTag('x').addChild('field')
+            field.setAttr('var', 'FORM_TYPE')
+            field.setAttr('type', 'hidden')
+            field.setTag('value').setData('urn:xmpp:mam:2')
+
+            field2 = stanza_send.getTag('query').getTag('x').addChild('field')
+            field2.setAttr('var', '{urn:xmpp:sid:0}stanza-id')
+            field2.setTag('value').setData(str(pinned_id))
+
+        # in this case we ask to delete pinned message
+        else:
+            stanza_send.setTag('update', namespace='http://xabber.com/protocol/groupchat').setTag('pinned-message')
 
         account = get_account_from_jid(myjid)
         app.connections[account].connection.send(stanza_send, now=True)
@@ -1180,10 +1200,6 @@ class Base(object):
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         nickname = None
-        print(additional_data)
-        print(graphics)
-        print(type(graphics))
-
         try:
             timestamp = str(additional_data['ts'])
             dtdate = timestamp.split('T')[0]
@@ -1545,6 +1561,7 @@ class Base(object):
         pinlabel = Gtk.Label(u"\U0001F4CC")
         pinlabel.set_size_request(64, 54)
         pinbutton = Gtk.Button(u"\u2A2F")
+        pinbutton.connect('clicked', self.send_unpin_message)
         pinbutton.set_size_request(34, 34)
         pinbutton.set_margin_left(10)
         pinbutton.set_margin_right(10)
@@ -1564,6 +1581,11 @@ class Base(object):
         chat_control_box.reorder_child(self.pinned_message, 2)
 
         self.pinned_message.hide()
+
+    def send_unpin_message(self, widget):
+        # def send_ask_for_pinned_message(self, myjid, room, pinned_id):
+        self.plugin.send_ask_for_pinned_message(self.cli_jid, self.room_jid, None)
+        return
 
     def set_pin_message(self, name, timestamp, message):
         self.pinned_nick.set_text(name)
