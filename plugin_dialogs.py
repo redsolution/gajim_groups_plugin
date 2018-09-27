@@ -534,7 +534,6 @@ class InviteMemberDialog(Gtk.Dialog):
         self.plugin = plugin
         Gtk.Dialog.__init__(self, _('Invite member'), None, 0)
         self.set_default_size(400, 600)
-        self.plugin = plugin
 
         self.CHOOSED_USERS = []
         self.user_widgets = []
@@ -765,3 +764,230 @@ class InviteMemberDialog(Gtk.Dialog):
 
 
 
+class ChatEditDialog(Gtk.Dialog):
+
+    def __init__(self, chat_control, plugin, default_avatar):
+        self.default_avatar = default_avatar
+        self.plugin = plugin
+        self.chat_control = chat_control
+        self.room = app.get_jid_without_resource(chat_control.room_jid)
+        self.room_data = plugin.room_data[self.room]
+        self.myjid = chat_control.cli_jid
+
+        # add dialog to controls, its needed to update window data
+        self.plugin.chat_edit_dialog_windows[self.room] = self
+        self.plugin.send_ask_for_rights(self.myjid, self.room, type='GCMembersList', mydata=False)
+
+        Gtk.Dialog.__init__(self, self.room_data['name'], None, 0)
+        self.connect('delete_event', self.on_close)
+        self.set_default_size(600, 400)
+
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.main_box.set_margin_top(20)
+        self.main_box.set_margin_bottom(20)
+        self.users_notebook = Gtk.Notebook()
+
+        css = '''#notebook{
+        border: none;
+        }'''
+        gtkgui_helpers.add_css_to_widget(self.main_box, css)
+        self.main_box.set_name('notebook')
+        gtkgui_helpers.add_css_to_widget(self.users_notebook, css)
+        self.users_notebook.set_name('notebook')
+
+        self.chat_edit = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.users_members = Gtk.ScrolledWindow()
+        self.users_invited = Gtk.ScrolledWindow()
+        self.users_blocked = Gtk.ScrolledWindow()
+
+        # ============================ chat editor ============================ #
+
+        def addrow(icon_name, big_text, small_text):
+            file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+            file = os.path.join(file, icon_name)
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, False)
+            image = Gtk.Image.new_from_pixbuf(pixbuf)
+            image_box = Gtk.Box()
+            image_box.set_margin_right(10)
+            image_box.add(image)
+
+            row = Gtk.ListBoxRow()
+            row.set_margin_top(6)
+            row.set_margin_bottom(6)
+            row.set_margin_left(10)
+            row.set_margin_right(10)
+            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            row.add(hbox)
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            hbox.pack_start(image_box, False, False, 0)
+            hbox.pack_start(vbox, True, True, 0)
+            label1 = Gtk.Label(big_text, xalign=0)
+            gtkgui_helpers.add_css_to_widget(label1, '#label1 { font-size: 14px; color: #616161;}')
+            label1.set_name('label1')
+            label2 = Gtk.Label(small_text, xalign=0)
+            gtkgui_helpers.add_css_to_widget(label2, '#label2 { font-size: 12px; color: #9E9E9E;}')
+            label2.set_name('label2')
+            vbox.pack_start(label1, True, True, 0)
+            vbox.pack_start(label2, True, True, 0)
+
+            return row
+
+        # top label
+        self.chat_edit_listbox = Gtk.ListBox()
+        self.chat_edit_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        chat_edit_label = Gtk.Label(_('Chat properties'))
+        chat_edit_label.set_size_request(-1, 26)
+        chat_edit_label.set_justify(Gtk.Justification.LEFT)
+        chat_edit_label.set_halign(Gtk.Align.START)
+        chat_edit_label.set_margin_left(10)
+        self.chat_edit.pack_start(chat_edit_label, False, True, 0)
+        self.chat_edit.pack_start(self.chat_edit_listbox, True, True, 0)
+
+        # all gc data
+        row = addrow('xmpp.svg', self.room, 'Jabber ID')
+        self.chat_edit_listbox.add(row)
+        row = addrow('account-box-outline.svg', self.room_data['name'], 'Name')
+        self.chat_edit_listbox.add(row)
+        row = addrow('file-document-box.svg', self.room_data['description'], 'Description')
+        self.chat_edit_listbox.add(row)
+        row = addrow('magnify.svg', self.room_data['searchable'], 'Indexed')
+        self.chat_edit_listbox.add(row)
+        row = addrow('comment-question-outline.svg', self.room_data['anonymous'], 'Anonymous')
+        self.chat_edit_listbox.add(row)
+        row = addrow('lock-open-outline.svg', self.room_data['model'], 'Membership')
+        self.chat_edit_listbox.add(row)
+
+        # ============================ users edit  ============================ #
+        # members users list
+        self.users_members_listbox = Gtk.ListBox()
+        self.users_members_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.users_members.add(self.users_members_listbox)
+        self.users_members_listbox.add(Gtk.Label(_('LOADING...')))
+
+        # invited users list
+        self.users_invited_listbox = Gtk.ListBox()
+        self.users_invited_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.users_invited.add(self.users_invited_listbox)
+
+        # blocked users list
+        self.users_blocked_listbox = Gtk.ListBox()
+        self.users_blocked_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.users_blocked.add(self.users_blocked_listbox)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.add(self.users_members)
+        self.users_notebook.append_page(scrolled, Gtk.Label(_('Chat users')))
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.add(self.users_invited)
+        self.users_notebook.append_page(scrolled, Gtk.Label(_('invited')))
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.add(self.users_blocked)
+        self.users_notebook.append_page(scrolled, Gtk.Label(_('blocked')))
+
+        self.main_box.pack_start(self.users_notebook, True, True, 0)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.add(self.chat_edit)
+        scrolled.set_size_request(150, -1)
+        self.main_box.pack_start(scrolled, True, True, 0)
+
+        box = self.get_content_area()
+        box.pack_start(self.main_box, True, True, 0)
+
+    def update_members_list(self, users, AVATARS_DIR):
+        # delete old children
+        children = self.users_members_listbox.get_children()
+        for child in children:
+            child.destroy()
+
+        # create new children
+        for user in users:
+            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            hbox.set_margin_top(4)
+            hbox.set_margin_bottom(4)
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            # avatar
+            try:
+                path = os.path.normpath(AVATARS_DIR + '/' + user['av_id'] + '.jpg')
+                file = open(path)
+                file = os.path.normpath(path)
+            except:
+                file = self.default_avatar
+
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
+            image = Gtk.Image.new_from_pixbuf(pixbuf)
+            avatar_event_box = Gtk.EventBox()
+            avatar_event_box.add(image)
+            avatar_event_box.set_margin_right(8)
+            avatar_event_box.set_margin_left(8)
+
+            # nickname badge jid
+            nickname = Gtk.Label(user['nickname'])
+            badge = Gtk.Label(user['badge'])
+            badge.set_margin_left(8)
+            jid = Gtk.Label(user['jid'])
+
+            gtkgui_helpers.add_css_to_widget(nickname, '#nickname { font-size: 14px; color: #000000;}')
+            nickname.set_name('nickname')
+            gtkgui_helpers.add_css_to_widget(badge, '#badge { font-size: 12px; color: #616161;}')
+            badge.set_name('badge')
+            gtkgui_helpers.add_css_to_widget(jid, '#jid { font-size: 12px; color: #9E9E9E;}')
+            jid.set_name('jid')
+            jid.set_justify(Gtk.Justification.LEFT)
+            jid.set_halign(Gtk.Align.START)
+
+            nick_badge_grid = Gtk.Grid()
+            nick_badge_grid.attach(nickname, 0, 0, 1, 1)
+            nick_badge_grid.attach(badge, 1, 0, 1, 1)
+            vbox.pack_start(nick_badge_grid, False, True, 0)
+            vbox.pack_start(jid, False, True, 0)
+
+            # usertype
+            icons_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+            if user['usertype'] == 'admin':
+                file = os.path.join(icons_path, 'star-outline.svg')
+            elif user['usertype'] == 'owner':
+                file = os.path.join(icons_path, 'star.svg')
+            else:
+                file = None
+
+            hbox.pack_start(avatar_event_box, False, True, 0)
+            hbox.pack_start(vbox, False, True, 0)
+
+            # TODO usertypes
+
+            star_image = None
+            image_box = None
+            print(file)
+            print(user['usertype'])
+            if file:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, False)
+                star_image = Gtk.Image.new_from_pixbuf(pixbuf)
+                image_box = Gtk.Box()
+                image_box.add(star_image)
+                hbox.pack_start(image_box, False, True, 0)
+
+            self.users_members_listbox.add(hbox)
+            image.show()
+            avatar_event_box.show()
+            hbox.show()
+            vbox.show()
+            nickname.show()
+            badge.show()
+            jid.show()
+            nick_badge_grid.show()
+            if file:
+                star_image.show()
+                image_box.show()
+            self.users_members_listbox.show()
+
+
+    def on_close(self, eb=None, event=None):
+        print('well ok')
+        del self.plugin.chat_edit_dialog_windows[self.room]
+
+    def popup(self):
+        vb = self.get_children()[0].get_children()[0]
+        vb.grab_focus()
+        self.show_all()
