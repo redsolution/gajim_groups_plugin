@@ -1,7 +1,7 @@
 import gi
 import os
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, GdkPixbuf
+from gi.repository import Gtk, Gdk, GdkPixbuf, Pango
 from gajim import gtkgui_helpers
 from gajim.common import app
 from gajim.common import configpaths
@@ -314,6 +314,7 @@ class UserDataDialog(Gtk.Dialog):
 
     def on_block_clicked(self, eb, event):
         print('block')
+        self.plugin.send_set_user_block(self.chat_control.cli_jid, self.chat_control.room_jid, self.userdata['id'])
         self.destroy()
         return
 
@@ -777,7 +778,8 @@ class ChatEditDialog(Gtk.Dialog):
         # add dialog to controls, its needed to update window data
         self.plugin.chat_edit_dialog_windows[self.room] = self
         self.plugin.send_ask_for_rights(self.myjid, self.room, type='GCMembersList', mydata=False)
-        self.plugin.send_ask_for_blocks(self.myjid, self.room, type='GCBlockedList')
+        self.plugin.send_ask_for_blocks_invites(self.myjid, self.room, type='GCBlockedList')
+        self.plugin.send_ask_for_blocks_invites(self.myjid, self.room, type='GCInvitedList')
 
         Gtk.Dialog.__init__(self, self.room_data['name'], None, 0)
         self.connect('delete_event', self.on_close)
@@ -898,6 +900,70 @@ class ChatEditDialog(Gtk.Dialog):
         box = self.get_content_area()
         box.pack_start(self.main_box, True, True, 0)
 
+    def update_invited_list(self, invited=None, error=None):
+        # delete old children
+        children = self.users_invited_listbox.get_children()
+        for child in children:
+            child.destroy()
+
+        if invited:
+            for user in invited:
+                file = self.default_avatar
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
+                av_image = Gtk.Image.new_from_pixbuf(pixbuf)
+                avatar_event_box = Gtk.EventBox()
+                avatar_event_box.add(av_image)
+                avatar_event_box.set_margin_right(8)
+                avatar_event_box.set_margin_left(8)
+
+                user_jid = Gtk.Label(user)
+                user_jid.set_justify(Gtk.Justification.LEFT)
+                user_jid.set_halign(Gtk.Align.START)
+                user_jid.set_ellipsize(Pango.EllipsizeMode.END)
+                gtkgui_helpers.add_css_to_widget(user_jid, '#user_jid { font-size: 14px; color: #000000;}')
+                user_jid.set_name('user_jid')
+                user_jid.set_margin_right(8)
+                user_jid_grid = Gtk.Grid()
+                user_jid_grid.add(user_jid)
+
+                file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+                file = os.path.join(file, 'undo.svg')
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, True)
+                image = Gtk.Image.new_from_pixbuf(pixbuf)
+                undo = Gtk.EventBox()
+                undo.connect('button-press-event', self.on_send_revoke, user)
+                undo.add(image)
+
+                hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+                hbox.pack_start(avatar_event_box, False, True, 0)
+                hbox.pack_start(user_jid_grid, True, True, 0)
+                hbox.pack_start(undo, False, True, 0)
+
+                av_image.show()
+                avatar_event_box.show()
+                image.show()
+                user_jid.show()
+                user_jid_grid.show()
+                undo.show()
+                hbox.show()
+                hbox.set_margin_right(8)
+                hbox.set_margin_left(8)
+                hbox.set_margin_top(4)
+                hbox.set_margin_bottom(4)
+                self.users_invited_listbox.add(hbox)
+
+            if not len(invited):
+                empty = Gtk.Label(_('List is empty'))
+                empty.show()
+                self.users_invited_listbox.add(empty)
+
+        if error:
+            empty = Gtk.Label(error)
+            empty.show()
+            self.users_invited_listbox.add(empty)
+
+        self.users_invited_listbox.show()
+
     def update_blocked_list(self, blocked):
         # delete old children
         children = self.users_blocked_listbox.get_children()
@@ -905,24 +971,41 @@ class ChatEditDialog(Gtk.Dialog):
             child.destroy()
 
         for user in blocked:
-            user_id = user['id']
-            file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
-            file = os.path.join(file, 'block-helper.svg')
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, True)
-            image = Gtk.Image.new_from_pixbuf(pixbuf)
+            file = self.default_avatar
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 32, 32, False)
+            av_image = Gtk.Image.new_from_pixbuf(pixbuf)
+            avatar_event_box = Gtk.EventBox()
+            avatar_event_box.add(av_image)
+            avatar_event_box.set_margin_right(8)
+            avatar_event_box.set_margin_left(8)
 
-            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            user_id = user['id']
+
             user_jid = Gtk.Label(user['jid'])
-            gtkgui_helpers.add_css_to_widget(user_jid, '#user_jid { font-size: 14px; color: #616161;}')
+            user_jid.set_justify(Gtk.Justification.LEFT)
+            user_jid.set_halign(Gtk.Align.START)
+            user_jid.set_ellipsize(Pango.EllipsizeMode.END)
+            gtkgui_helpers.add_css_to_widget(user_jid, '#user_jid { font-size: 14px; color: #000000;}')
             user_jid.set_name('user_jid')
             user_jid.set_margin_right(8)
             user_jid_grid = Gtk.Grid()
             user_jid_grid.add(user_jid)
+
+            file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+            file = os.path.join(file, 'block-helper.svg')
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, True)
+            image = Gtk.Image.new_from_pixbuf(pixbuf)
             undo = Gtk.EventBox()
+            undo.connect('button-press-event', self.on_send_unblock, user_id)
             undo.add(image)
+
+            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            hbox.pack_start(avatar_event_box, False, True, 0)
             hbox.pack_start(user_jid_grid, True, True, 0)
             hbox.pack_start(undo, False, True, 0)
 
+            av_image.show()
+            avatar_event_box.show()
             image.show()
             user_jid.show()
             user_jid_grid.show()
@@ -974,7 +1057,13 @@ class ChatEditDialog(Gtk.Dialog):
 
             # nickname badge jid
             nickname = Gtk.Label(user['nickname'])
+            nickname.set_justify(Gtk.Justification.LEFT)
+            nickname.set_halign(Gtk.Align.START)
+            nickname.set_ellipsize(Pango.EllipsizeMode.END)
             badge = Gtk.Label(user['badge'])
+            badge.set_justify(Gtk.Justification.LEFT)
+            badge.set_halign(Gtk.Align.START)
+            badge.set_ellipsize(Pango.EllipsizeMode.END)
             badge.set_margin_left(8)
             jid = Gtk.Label(user['jid'])
 
@@ -1035,6 +1124,14 @@ class ChatEditDialog(Gtk.Dialog):
                 image_box.show()
 
         self.users_members_listbox.show()
+
+    def on_send_revoke(self, eb, event, jid):
+        print(jid)
+        self.plugin.send_unblock_or_revoke(self.myjid, room=self.room, jid_id=jid, revoke=True)
+
+    def on_send_unblock(self, eb, event, id):
+        print(id)
+        self.plugin.send_unblock_or_revoke(self.myjid, room=self.room, jid_id=id, unblock=True)
 
     def on_user_click(self, eb, event, u_id):
         self.plugin.send_ask_for_rights(self.myjid, room=self.room, id=u_id, type='XGCUserOptions')

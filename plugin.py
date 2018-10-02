@@ -289,14 +289,34 @@ class XabberGroupsPlugin(GajimPlugin):
         account = get_account_from_jid(myjid)
         app.connections[account].connection.send(stanza_send, now=True)
 
+    @log_calls('XabberGroupsPlugin')
+    def send_unblock_or_revoke(self, myjid, room, jid_id, unblock=False, revoke=False):
+        acc = get_account_from_jid(myjid)
+        print(acc)
+        if unblock:
+            stanza_send = nbxmpp.Iq(to=room, typ='set')
+            stanza_send.setID('XGCBlockUser')
+            unblock = stanza_send.setTag('unblock', namespace='http://xabber.com/protocol/groupchat#block')
+            unblock.setTag('id').setData(jid_id)
+            app.connections[acc].connection.send(stanza_send, now=True)
+
+        if revoke:
+            stanza_send = nbxmpp.Iq(to=room, typ='set')
+            stanza_send.setID('XGCRevokeUser')
+            revoke = stanza_send.setTag('revoke', namespace='http://xabber.com/protocol/groupchat#invite')
+            revoke.setTag('jid').setData(jid_id)
+            app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
-    def send_ask_for_blocks(self, myjid, room, type=''):
+    def send_ask_for_blocks_invites(self, myjid, room, type=''):
         acc = get_account_from_jid(myjid)
         print(acc)
         stanza_send = nbxmpp.Iq(to=room, typ='get')
         stanza_send.setAttr('id', type)
-        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#block')
+        if type == 'GCBlockedList':
+            stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#block')
+        elif type == 'GCInvitedList':
+            stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#invite')
         app.connections[acc].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
@@ -331,11 +351,21 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def send_set_user_kick(self, myjid, room, user_id):
         stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setID('XGCKickUser')
         stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#members')
         stanza_send.getTag('query').setTagAttr('item', 'id', str(user_id))
         stanza_send.getTag('query').getTag('item').setAttr('role', 'none')
         acc = get_account_from_jid(myjid)
         app.connections[acc].connection.send(stanza_send, now=True)
+
+    def send_set_user_block(self, myjid, room, user_id):
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setID('XGCBlockUser')
+        block = stanza_send.setTag('block', namespace='http://xabber.com/protocol/groupchat#block')
+        block.setTag('id').setData(user_id)
+        acc = get_account_from_jid(myjid)
+        app.connections[acc].connection.send(stanza_send, now=True)
+        return
 
     @log_calls('XabberGroupsPlugin')
     def send_set_user_rights(self, myjid, room, user_id, rights):
@@ -408,6 +438,51 @@ class XabberGroupsPlugin(GajimPlugin):
         on_get_pinned_message = (obj.stanza.getAttr('id') == 'XGCPinnedMessage')
         on_get_chatmembers_data = (obj.stanza.getAttr('id') == 'GCMembersList')
         on_get_chat_blocked_data = (obj.stanza.getAttr('id') == 'GCBlockedList')
+        on_get_chat_invited_data = (obj.stanza.getAttr('id') == 'GCInvitedList')
+
+        # XGCBlockUser
+        # XGCKickUser
+        # XGCRevokeUser
+        on_block_user_chat_update = (obj.stanza.getAttr('id') == 'XGCBlockUser')
+        on_revoke_user_chat_update = (obj.stanza.getAttr('id') == 'XGCRevokeUser')
+
+        if on_block_user_chat_update:
+            myjid = obj.stanza.getAttr('to')
+            room = obj.stanza.getAttr('from')
+            self.send_ask_for_blocks_invites(myjid, room, type='GCBlockedList')
+
+        if on_revoke_user_chat_update:
+            myjid = obj.stanza.getAttr('to')
+            room = obj.stanza.getAttr('from')
+            self.send_ask_for_blocks_invites(myjid, room, type='GCInvitedList')
+
+
+        if on_get_chat_invited_data:
+            print('invited data get\n'*10)
+            room = obj.stanza.getAttr('from')
+            room_dialog = self.chat_edit_dialog_windows[room]
+            invited_users_data = []
+            query = obj.stanza.getTag('query', namespace='http://xabber.com/protocol/groupchat#invite')
+            users = query.getTags('user')
+            for user in users:
+                jid = user.getAttr('jid')
+                print(user)
+                print(jid)
+                invited_users_data.append(jid)
+            '''
+            <error code='405' type='cancel'>
+            <not-allowed xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>
+            <text xmlns='urn:ietf:params:xml:ns:xmpp-stanzas' xml:lang='en'>You have no permission to see list of invited users</text>
+            </error>
+            '''
+            error = obj.stanza.getTag('error')
+            if error:
+                text = error.getTag('text', namespace='urn:ietf:params:xml:ns:xmpp-stanzas').getData()
+                room_dialog.update_invited_list(error=text)
+            else:
+                room_dialog.update_invited_list(invited=invited_users_data)
+
+
 
         if on_get_chat_blocked_data:
             print('blocked data get\n'*10)
