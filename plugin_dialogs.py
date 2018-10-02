@@ -777,6 +777,7 @@ class ChatEditDialog(Gtk.Dialog):
         # add dialog to controls, its needed to update window data
         self.plugin.chat_edit_dialog_windows[self.room] = self
         self.plugin.send_ask_for_rights(self.myjid, self.room, type='GCMembersList', mydata=False)
+        self.plugin.send_ask_for_blocks(self.myjid, self.room, type='GCBlockedList')
 
         Gtk.Dialog.__init__(self, self.room_data['name'], None, 0)
         self.connect('delete_event', self.on_close)
@@ -868,11 +869,13 @@ class ChatEditDialog(Gtk.Dialog):
         self.users_invited_listbox = Gtk.ListBox()
         self.users_invited_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self.users_invited.add(self.users_invited_listbox)
+        self.users_invited_listbox.add(Gtk.Label(_('LOADING...')))
 
         # blocked users list
         self.users_blocked_listbox = Gtk.ListBox()
         self.users_blocked_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self.users_blocked.add(self.users_blocked_listbox)
+        self.users_blocked_listbox.add(Gtk.Label(_('LOADING...')))
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.add(self.users_members)
@@ -895,6 +898,50 @@ class ChatEditDialog(Gtk.Dialog):
         box = self.get_content_area()
         box.pack_start(self.main_box, True, True, 0)
 
+    def update_blocked_list(self, blocked):
+        # delete old children
+        children = self.users_blocked_listbox.get_children()
+        for child in children:
+            child.destroy()
+
+        for user in blocked:
+            user_id = user['id']
+            file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+            file = os.path.join(file, 'block-helper.svg')
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, True)
+            image = Gtk.Image.new_from_pixbuf(pixbuf)
+
+            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            user_jid = Gtk.Label(user['jid'])
+            gtkgui_helpers.add_css_to_widget(user_jid, '#user_jid { font-size: 14px; color: #616161;}')
+            user_jid.set_name('user_jid')
+            user_jid.set_margin_right(8)
+            user_jid_grid = Gtk.Grid()
+            user_jid_grid.add(user_jid)
+            undo = Gtk.EventBox()
+            undo.add(image)
+            hbox.pack_start(user_jid_grid, True, True, 0)
+            hbox.pack_start(undo, False, True, 0)
+
+            image.show()
+            user_jid.show()
+            user_jid_grid.show()
+            undo.show()
+            hbox.show()
+            hbox.set_margin_right(8)
+            hbox.set_margin_left(8)
+            hbox.set_margin_top(4)
+            hbox.set_margin_bottom(4)
+            self.users_blocked_listbox.add(hbox)
+
+        if len(blocked) == 0:
+            empty = Gtk.Label(_('List is empty'))
+            empty.show()
+            self.users_blocked_listbox.add(empty)
+
+        self.users_blocked_listbox.show()
+
+
     def update_members_list(self, users, AVATARS_DIR):
         # delete old children
         children = self.users_members_listbox.get_children()
@@ -903,7 +950,10 @@ class ChatEditDialog(Gtk.Dialog):
 
         # create new children
         for user in users:
+            user_event_box = Gtk.EventBox()
+            user_event_box.connect('button-press-event', self.on_user_click, user['id'])
             hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            user_event_box.add(hbox)
             hbox.set_margin_top(4)
             hbox.set_margin_bottom(4)
             vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -953,7 +1003,7 @@ class ChatEditDialog(Gtk.Dialog):
                 file = None
 
             hbox.pack_start(avatar_event_box, False, True, 0)
-            hbox.pack_start(vbox, False, True, 0)
+            hbox.pack_start(vbox, True, True, 0)
 
             # TODO usertypes
 
@@ -962,13 +1012,16 @@ class ChatEditDialog(Gtk.Dialog):
             print(file)
             print(user['usertype'])
             if file:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 24, 24, False)
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 16, 16, False)
                 star_image = Gtk.Image.new_from_pixbuf(pixbuf)
                 image_box = Gtk.Box()
                 image_box.add(star_image)
+                image_box.set_margin_right(8)
+                image_box.set_margin_left(8)
                 hbox.pack_start(image_box, False, True, 0)
 
-            self.users_members_listbox.add(hbox)
+            self.users_members_listbox.add(user_event_box)
+            user_event_box.show()
             image.show()
             avatar_event_box.show()
             hbox.show()
@@ -980,8 +1033,11 @@ class ChatEditDialog(Gtk.Dialog):
             if file:
                 star_image.show()
                 image_box.show()
-            self.users_members_listbox.show()
 
+        self.users_members_listbox.show()
+
+    def on_user_click(self, eb, event, u_id):
+        self.plugin.send_ask_for_rights(self.myjid, room=self.room, id=u_id, type='XGCUserOptions')
 
     def on_close(self, eb=None, event=None):
         print('well ok')

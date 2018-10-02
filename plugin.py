@@ -289,6 +289,16 @@ class XabberGroupsPlugin(GajimPlugin):
         account = get_account_from_jid(myjid)
         app.connections[account].connection.send(stanza_send, now=True)
 
+
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_for_blocks(self, myjid, room, type=''):
+        acc = get_account_from_jid(myjid)
+        print(acc)
+        stanza_send = nbxmpp.Iq(to=room, typ='get')
+        stanza_send.setAttr('id', type)
+        stanza_send.setTag('query').setNamespace('http://xabber.com/protocol/groupchat#block')
+        app.connections[acc].connection.send(stanza_send, now=True)
+
     @log_calls('XabberGroupsPlugin')
     def send_ask_for_rights(self, myjid, room, id='', type='', mydata=True):
         acc = get_account_from_jid(myjid)
@@ -397,6 +407,31 @@ class XabberGroupsPlugin(GajimPlugin):
         on_create_groupchat_response = (obj.stanza.getAttr('id') == 'CreateXGroupChat1')
         on_get_pinned_message = (obj.stanza.getAttr('id') == 'XGCPinnedMessage')
         on_get_chatmembers_data = (obj.stanza.getAttr('id') == 'GCMembersList')
+        on_get_chat_blocked_data = (obj.stanza.getAttr('id') == 'GCBlockedList')
+
+        if on_get_chat_blocked_data:
+            print('blocked data get\n'*10)
+            room = obj.stanza.getAttr('from')
+            room_dialog = self.chat_edit_dialog_windows[room]
+            '''
+            <query xmlns="http://xabber.com/protocol/groupchat#block">
+                <user jid="devmuler@jabber.ru">xscgmq69xltyyjue</user>
+            </query>
+            '''
+            blocked_users_data = []
+            query = obj.stanza.getTag('query', namespace='http://xabber.com/protocol/groupchat#block')
+            users = query.getTags('user')
+            print(users)
+            for user in users:
+                id = user.getData()
+                try: jid = user.getAttr('jid')
+                except: jid = id
+                print(user)
+                print(jid)
+                print(id)
+                blocked_users_data.append({'jid': jid,
+                                           'id': id})
+            room_dialog.update_blocked_list(blocked_users_data)
 
         if on_get_chatmembers_data:
             print('on_get_chatmembers_data\n'*10)
@@ -411,37 +446,21 @@ class XabberGroupsPlugin(GajimPlugin):
             items = query.getTags('item')
             members_list = []
             for item in items:
-                '''
-                <item>
-                   <id>jvnr9twdnxz2uhbd</id>
-                   <jid>maksim.batyatin@redsolution.com</jid>
-                   <badge>&#x1f98d;макак</badge>
-                   <nickname>Batyatin Maksim</nickname>
-                   <metadata xmlns="urn:xmpp:avatar:metadata">
-                      <info bytes="24211" id="3ad7fb5691c5c098dd2bda8827ef48c27bc81c05" type="image/jpeg" />
-                   </metadata>
-                   <permission name="block-member" expires="3018-08-06 10:03:46" issued-by="server" issued-at="2018-08-06 10:03:46" />
-                   <permission name="change-badge" expires="3018-08-13 11:06:40" issued-by="server" issued-at="2018-08-13 11:06:40" />
-                   <permission name="change-nickname" expires="3018-08-13 11:06:40" issued-by="server" issued-at="2018-08-13 11:06:40" />
-                   <permission name="change-restriction" expires="3018-08-06 10:03:46" issued-by="server" issued-at="2018-08-06 10:03:46" />
-                   <permission name="invite-member" expires="3018-08-06 10:03:46" issued-by="server" issued-at="2018-08-06 10:03:46" />
-                   <permission name="owner" expires="3018-08-06 10:03:46" issued-by="server" issued-at="2018-08-06 10:03:46" />
-                   <permission name="remove-member" expires="3018-08-06 10:03:46" issued-by="server" issued-at="2018-08-06 10:03:46" />
-                </item>
-
-                '''
                 id = item.getTag('id').getData()
                 try: jid = item.getTag('jid').getData()
                 except: jid = id
                 badge = item.getTag('badge').getData()
                 nickname = item.getTag('nickname').getData()
-                av_id = item.getTag('metadata', namespace="urn:xmpp:avatar:metadata").getTag('info').getAttr('id')
+                try:
+                    av_id = item.getTag('metadata', namespace="urn:xmpp:avatar:metadata").getTag('info').getAttr('id')
+                except: av_id = 'unknown'
 
                 usertype = 'member'
-                perms = query.getTags('permission')
+                perms = item.getTags('permission')
                 if len(perms) > 0:
                     usertype = 'admin'
                 for p in perms:
+                    print(p)
                     if p.getAttr('name') == 'owner':
                         usertype = 'owner'
 
