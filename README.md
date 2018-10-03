@@ -10,5 +10,5 @@ rename "gajim_groups_plugin" folder as "groups_plugin"
 
 Linux:   
 put this folder into   
-.../ome/local/share/gajim/plugins   
+.../home/local/share/gajim/plugins   
 rename "gajim_groups_plugin" folder as "groups_plugin"
