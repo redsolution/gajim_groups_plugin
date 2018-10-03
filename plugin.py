@@ -77,7 +77,6 @@ class XabberGroupsPlugin(GajimPlugin):
         self.room_data = {}
         self.chat_edit_dialog_windows = {}
         self.nonupdated_stanza_id_messages = {}
-        self.history_window_control = None
 
         self.events_handlers = {
             'decrypted-message-received': (ged.OUT_POSTGUI1, self._nec_decrypted_message_received),
@@ -215,6 +214,27 @@ class XabberGroupsPlugin(GajimPlugin):
                                         })
             self.nonupdated_stanza_id_messages[obj.stanza_id] = obj
 
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_history_when_connect(self, room, myjid):
+        print(room)
+        print(myjid)
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setTag('query', namespace='urn:xmpp:mam:2').setAttr('queryid', 'XMAMessage')
+        q = stanza_send.getTag('query').setTag('set', namespace='http://jabber.org/protocol/rsm')
+        q.setTag('max').setData('20')
+        q.setTag('before')
+        account = get_account_from_jid(myjid)
+        app.connections[account].connection.send(stanza_send, now=True)
+        '''
+        <iq type='set' id='juliet1'>
+             <query xmlns="urn:xmpp:mam:1" queryid="2865943C-2B10-44D8-894C-E5EE646DE1CF">
+                  <set xmlns="http://jabber.org/protocol/rsm">
+                     <max>20</max>
+                     <before />
+                  </set>
+               </query>
+        </iq>
+        '''
 
     @log_calls('XabberGroupsPlugin')
     def send_set_pinned_message(self, room, myjid, stanza_id):
@@ -358,6 +378,7 @@ class XabberGroupsPlugin(GajimPlugin):
         acc = get_account_from_jid(myjid)
         app.connections[acc].connection.send(stanza_send, now=True)
 
+    @log_calls('XabberGroupsPlugin')
     def send_set_user_block(self, myjid, room, user_id):
         stanza_send = nbxmpp.Iq(to=room, typ='set')
         stanza_send.setID('XGCBlockUser')
@@ -456,7 +477,6 @@ class XabberGroupsPlugin(GajimPlugin):
             room = obj.stanza.getAttr('from')
             self.send_ask_for_blocks_invites(myjid, room, type='GCInvitedList')
 
-
         if on_get_chat_invited_data:
             print('invited data get\n'*10)
             room = obj.stanza.getAttr('from')
@@ -481,8 +501,6 @@ class XabberGroupsPlugin(GajimPlugin):
                 room_dialog.update_invited_list(error=text)
             else:
                 room_dialog.update_invited_list(invited=invited_users_data)
-
-
 
         if on_get_chat_blocked_data:
             print('blocked data get\n'*10)
@@ -779,6 +797,7 @@ class XabberGroupsPlugin(GajimPlugin):
             return
 
         try:
+            # forwarded
             message = obj.stanza.getTag('result').getTag('forwarded').getTag('message')
             timestamp = message.getTag('time').getAttr('stamp')
             nickname = message.getTag('x').getTag('nickname').getData()
@@ -795,6 +814,98 @@ class XabberGroupsPlugin(GajimPlugin):
 
             self.controls[account][room].set_pin_message(nickname, timestamp, body)
         except: pass
+
+        # forwarded
+        if obj.stanza.getTag('result', namespace='urn:xmpp:mam:2').getAttr('queryid') == 'XMAMessage':
+            room = obj.stanza.getAttr('from')
+            myjid = obj.stanza.getAttr('to')
+            account = get_account_from_jid(myjid)
+
+            # <time xmlns='http://xabber.com/protocol/unique'
+            # by='4test@xmppdev01.xabber.com'
+            # stamp='2018-10-03T10:38:46.123295Z'/>
+
+            message = obj.stanza.getTag('result', namespace='urn:xmpp:mam:2').getTag('forwarded', namespace='urn:xmpp:forward:0').getTag('message')
+            name = message.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+            userid = message.getTag('x', namespace=XABBER_GC).getTag('id').getData()
+            if not name:
+                name = False
+            message_text = message.getTag('x', namespace=XABBER_GC).getTag('body').getData()
+            id = None
+            try:
+                id = message.getTag('x', namespace=XABBER_GC).getTag('metadata', namespace='urn:xmpp:avatar:metadata')
+                id = id.getTag('info').getAttr('id')
+            except: id = 'unknown'
+            jid = None
+            try:
+                jid = message.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
+            except: jid = 'unknown'
+            role = message.getTag('x', namespace=XABBER_GC).getTag('role').getData()
+            badge = message.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
+
+            forwarded = message.getTag('origin-id', namespace='urn:xmpp:sid:0').getTag('forwarded', namespace='urn:xmpp:forward:0')
+
+            forward_m = None
+            if forwarded:
+                print('forwarded\n' * 10)
+                delay = forwarded.getTag('delay', namespace='urn:xmpp:delay').getAttr('stamp')
+                fobj = forwarded.getTag('message')
+                fstanza_id = fobj.getTag('stanza-id').getAttr('id')
+
+                try:  fname = fobj.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
+                except: fname = name
+                try:  fuserid = fobj.getTag('x', namespace=XABBER_GC).getTag('id').getData()
+                except:  fuserid = userid
+                try: fmessage = fobj.getTag('x', namespace=XABBER_GC).getTag('body').getData()
+                except: fmessage = fobj.getTag('body').getData()
+                fjid = None
+                try:
+                    fjid = fobj.getTag('x', namespace=XABBER_GC).getTag('jid').getData()
+                except:
+                    if fname == name:
+                        fjid = jid
+                    else:
+                        fjid = 'unknown'
+                fid = None
+                try:
+                    fid = fobj.getTag('x', namespace=XABBER_GC).getTag('metadata',
+                                                                       namespace='urn:xmpp:avatar:metadata').getTag(
+                        'info').getAttr('id')
+                except:
+                    if fuserid == userid: fid = id
+                    else: fid = 'unknown'
+                try:
+                    frole = fobj.getTag('x', namespace=XABBER_GC).getTag('role').getData()
+                    fbadge = fobj.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
+                except:
+                    frole = role
+                    fbadge = badge
+
+                forward_m = {'jid': fjid,
+                             'nickname': fname,
+                             'message': fmessage,
+                             'id': fuserid,
+                             'av_id': fid,
+                             'role': frole,
+                             'badge': fbadge,
+                             'ts': delay,
+                             'stanza_id': fstanza_id
+                             }
+
+            stanza_id = message.getTag('stanza-id').getAttr('id')
+            timestamp = message.getTag('time').getAttr('stamp')
+            additional_data = {'jid': jid,
+                               'nickname': name,
+                               'message': message_text,
+                               'id': userid,
+                               'av_id': id,
+                               'role': role,
+                               'badge': badge,
+                               'forward': forward_m,
+                               'stanza_id': stanza_id,
+                               'ts': timestamp
+                               }
+            self.controls[account][room].print_real_text('', [], False, None, additional_data)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -1020,13 +1131,13 @@ class XabberGroupsPlugin(GajimPlugin):
             try:
                 is_data_exist = self.userdata[room][acc_jid]['av_id']
                 self.controls[account][room].on_userdata_updated(self.userdata[room][acc_jid])
+                self.send_ask_history_when_connect(room, acc_jid)
             except:
                 self.send_ask_for_rights(acc_jid, room, type='XGCUserdata')
 
             if room in self.room_data:
                 if self.room_data[room]['pinned']:
                     self.send_ask_for_pinned_message(acc_jid, room, self.room_data[room]['pinned'])
-
 
     @log_calls('XabberGroupsPlugin')
     def disconnect_from_chat_control(self, chat_control):
@@ -1038,10 +1149,6 @@ class XabberGroupsPlugin(GajimPlugin):
     @log_calls('XabberGroupsPlugin')
     def print_real_text(self, tv, real_text, text_tags, graphics,
                         iter_, additional_data):
-        if tv.used_in_history_window and self.history_window_control:
-            self.history_window_control.print_real_text(
-                real_text, text_tags, graphics, iter_, additional_data)
-
         account = tv.account
         for jid in self.controls[account]:
             if self.controls[account][jid].textview != tv:
@@ -1365,56 +1472,63 @@ class Base(object):
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
 
         print(additional_data)
+        print(text_tags)
 
-        nickname = None
-        try:
-            timestamp = str(additional_data['ts'])
-            dtdate = timestamp.split('T')[0]
-            dtdate = str(dtdate)[2:10]
-            dttime = timestamp.split('T')[1]
-            dttime = dttime[:8]
+        # delete old text from textview
+        if iter_:
+            buffer_ = self.textview.tv.get_buffer()
+            self.textview.plugin_modified = True
+            start = buffer_.get_start_iter()
+            end = buffer_.get_end_iter()
+            buffer_.delete(start, end)
 
-            if dtdate != self.last_message_date:
+        # restored_message
+        # need to ignore it
+        is_not_history = True
+        if 'restored_message' in text_tags:
+            is_not_history = False
+            print('yes, i am restored\n'
+                  'you dont need me\n'
+                  'so, i am leaving you')
+
+        if is_not_history:
+            try:
+                timestamp = str(additional_data['ts'])
+                dtdate = timestamp.split('T')[0]
+                dtdate = str(dtdate)[2:10]
+                dttime = timestamp.split('T')[1]
+                dttime = dttime[:8]
+
+                if dtdate != self.last_message_date:
+                    self.previous_message_from = None
+                    self.last_message_date = dtdate
+                    dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
+                    self.print_server_info(dt.strftime("%A, %d %B, %Y"))
+
+                timestamp = dttime
+            except: timestamp = '???'
+
+            SAME_FROM = False
+            try:
+                nickname = additional_data['nickname']
+                message = additional_data['message']
+                role = additional_data['role']
+                badge = additional_data['badge']
+                if self.previous_message_from == additional_data['id']:
+                    SAME_FROM = True
+                self.previous_message_from = additional_data['id']
+                IS_MSG = True
+            except:
+                IS_MSG = False
                 self.previous_message_from = None
-                self.last_message_date = dtdate
-                dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
-                self.print_server_info(dt.strftime("%A, %d %B, %Y"))
-
-            timestamp = dttime
-        except: timestamp = '???'
-
-        SAME_FROM = False
-        try:
-            nickname = additional_data['nickname']
-            message = additional_data['message']
-            role = additional_data['role']
-            badge = additional_data['badge']
-            if self.previous_message_from == additional_data['id']:
-                SAME_FROM = True
-            self.previous_message_from = additional_data['id']
-            IS_MSG = True
-        except:
-            IS_MSG = False
-            self.previous_message_from = None
-
-        buffer_ = self.textview.tv.get_buffer()
-
-        # delete old "[time] name: "
-        # upd. and put [time] into message timestamp
-        self.textview.plugin_modified = True
-        start = buffer_.get_start_iter()
-        end = buffer_.get_end_iter()
-        buffer_.delete(start, end)
 
 
+            if IS_MSG:
+                self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
+            else:
+                self.print_server_info(real_text)
 
-
-        if IS_MSG:
-            self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
-        else:
-            self.print_server_info(real_text)
-
-        gtkgui_helpers.scroll_to_end(self.scrolled)
+            gtkgui_helpers.scroll_to_end(self.scrolled)
 
 
 
@@ -1870,9 +1984,9 @@ class Base(object):
         self.remove_message_selection()
         print('pin clicked')
         print(data)
-        if 'forward' in data[1]:
+        try:
             stanza_id = data[1]['forward']['stanza_id']
-        else:
+        except:
             stanza_id = data[1]['stanza_id']
 
         self.plugin.send_set_pinned_message(self.room_jid, self.cli_jid, stanza_id)
