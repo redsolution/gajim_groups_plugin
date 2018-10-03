@@ -1,5 +1,10 @@
 # gajimXabberGroupchat
 how to install:
-put these files into '.../plugins/groups_plugin/' directoctory of gajim
-or install by zip, but first rename folder 'gajimXabberGroupchat-master' in zip file as 'groups_plugin'
-os windows: ...\Gajim\UserData\Plugins\groups_plugin\plugin.py
+Windows: \n
+put this folder into \n
+...\Gajim\UserData\Plugins \n
+rename "gajim_groups_plugin" folder as "groups_plugin"
+Linux: \n
+put this folder into \n
+.../ome/local/share/gajim/plugins
+rename "gajim_groups_plugin" folder as "groups_plugin"
