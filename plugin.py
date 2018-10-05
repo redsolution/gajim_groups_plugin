@@ -210,7 +210,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'role': add_data['role'],
                                         'message': obj.message,
                                         'ts': datetime.datetime.now().isoformat(),
-                                        'stanza_id': obj.stanza_id
+                                        'stanza_id': obj.stanza_id,
+                                        'forward': None
                                         })
             self.nonupdated_stanza_id_messages[obj.stanza_id] = obj
 
@@ -221,7 +222,7 @@ class XabberGroupsPlugin(GajimPlugin):
         stanza_send = nbxmpp.Iq(to=room, typ='set')
         stanza_send.setTag('query', namespace='urn:xmpp:mam:2').setAttr('queryid', 'XMAMessage')
         q = stanza_send.getTag('query').setTag('set', namespace='http://jabber.org/protocol/rsm')
-        q.setTag('max').setData('20')
+        q.setTag('max').setData('40')
         q.setTag('before')
         account = get_account_from_jid(myjid)
         app.connections[account].connection.send(stanza_send, now=True)
@@ -229,12 +230,24 @@ class XabberGroupsPlugin(GajimPlugin):
         <iq type='set' id='juliet1'>
              <query xmlns="urn:xmpp:mam:1" queryid="2865943C-2B10-44D8-894C-E5EE646DE1CF">
                   <set xmlns="http://jabber.org/protocol/rsm">
-                     <max>20</max>
+                     <max>40</max>
                      <before />
                   </set>
                </query>
         </iq>
         '''
+
+    @log_calls('XabberGroupsPlugin')
+    def send_ask_for_hisrory_when_top_reached(self, room, myjid, stanza_id):
+        print(room)
+        print(myjid)
+        stanza_send = nbxmpp.Iq(to=room, typ='set')
+        stanza_send.setTag('query', namespace='urn:xmpp:mam:2').setAttr('queryid', 'XMAMessage')
+        q = stanza_send.getTag('query').setTag('set', namespace='http://jabber.org/protocol/rsm')
+        q.setTag('max').setData('40')
+        q.setTag('before').setData(stanza_id)
+        account = get_account_from_jid(myjid)
+        app.connections[account].connection.send(stanza_send, now=True)
 
     @log_calls('XabberGroupsPlugin')
     def send_set_pinned_message(self, room, myjid, stanza_id):
@@ -453,6 +466,8 @@ class XabberGroupsPlugin(GajimPlugin):
         except: on_avatar_data_get = False
         try: on_userdata_get = obj.stanza.getTag('query', namespace=XABBER_GC+'#rights').getTag('item')
         except: on_userdata_get = False
+        try: on_messages_fin_get = (obj.stanza.getTag('fin', namespace='urn:xmpp:mam:2').getAttr('queryid') == 'XMAMessage')
+        except: on_messages_fin_get = False
         on_uploading_avatar_response = (obj.stanza.getAttr('id') == 'xgcPublish1')
         on_publish_response = (obj.stanza.getAttr('id') == 'xgcPublish2')
         on_create_groupchat_response = (obj.stanza.getAttr('id') == 'CreateXGroupChat1')
@@ -460,6 +475,16 @@ class XabberGroupsPlugin(GajimPlugin):
         on_get_chatmembers_data = (obj.stanza.getAttr('id') == 'GCMembersList')
         on_get_chat_blocked_data = (obj.stanza.getAttr('id') == 'GCBlockedList')
         on_get_chat_invited_data = (obj.stanza.getAttr('id') == 'GCInvitedList')
+
+        if on_messages_fin_get:
+            on_messages_fin_get = obj.stanza.getTag('fin', namespace='urn:xmpp:mam:2')
+            myjid = obj.stanza.getAttr('to')
+            acc = get_account_from_jid(myjid)
+            room = obj.stanza.getAttr('from')
+            top_message_id = on_messages_fin_get.getTag('set', namespace='http://jabber.org/protocol/rsm').getTag('first').getData()
+            self.controls[acc][room].top_message_id = top_message_id
+            self.controls[acc][room].is_waiting_for_messages = False
+            self.controls[acc][room].xmam_loc_id = 0
 
         # XGCBlockUser
         # XGCKickUser
@@ -792,11 +817,12 @@ class XabberGroupsPlugin(GajimPlugin):
                 print(origin_id)
                 print(stanza_id)
                 self.nonupdated_stanza_id_messages[origin_id].additional_data['stanza_id'] = stanza_id
-                # TODO save additional data forever
+                # TODO upload additional data
                 del self.nonupdated_stanza_id_messages[origin_id]
             return
 
         try:
+            result = obj.stanza.getTag('result').getAttr('queryid') == None
             # forwarded
             message = obj.stanza.getTag('result').getTag('forwarded').getTag('message')
             timestamp = message.getTag('time').getAttr('stamp')
@@ -812,7 +838,8 @@ class XabberGroupsPlugin(GajimPlugin):
             dttime = dttime[:8]
             timestamp = dtdate + ' ' + dttime
 
-            self.controls[account][room].set_pin_message(nickname, timestamp, body)
+            if result:
+                self.controls[account][room].set_pin_message(nickname, timestamp, body)
         except: pass
 
         # forwarded
@@ -905,7 +932,7 @@ class XabberGroupsPlugin(GajimPlugin):
                                'stanza_id': stanza_id,
                                'ts': timestamp
                                }
-            self.controls[account][room].print_real_text('', [], False, None, additional_data)
+            self.controls[account][room].print_real_text('', [], False, None, additional_data, mam_loc=True)
 
 
     @log_calls('XabberGroupsPlugin')
@@ -960,7 +987,7 @@ class XabberGroupsPlugin(GajimPlugin):
         '''
         room = obj.jid
         addallowjid(room)
-        stanza_id = obj.stanza.getAttr('id')
+        stanza_id = obj.stanza.getTag('stanza-id').getAttr('id')
         name = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
         userid = obj.stanza.getTag('x', namespace=XABBER_GC).getTag('id').getData()
         if not name:
@@ -985,8 +1012,7 @@ class XabberGroupsPlugin(GajimPlugin):
             print('forwarded\n'*10)
             delay = forwarded.getTag('delay', namespace='urn:xmpp:delay').getAttr('stamp')
             fobj = forwarded.getTag('message')
-            # fstanza_id = fobj.getTag('stanza-id').getAttr('id')
-            fstanza_id = ''
+            fstanza_id = fobj.getTag('stanza-id').getAttr('id')
 
             fname = ''
             try: fname = fobj.getTag('x', namespace=XABBER_GC).getTag('nickname').getData()
@@ -1046,7 +1072,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                     'role': role,
                                     'badge': badge,
                                     'forward': forward_m,
-                                    'ts': datetime.datetime.now().isoformat()
+                                    'ts': datetime.datetime.now().isoformat(),
+                                    'stanza_id': stanza_id
                                     })
         myjid = obj.stanza.getAttr('to')
         account = get_account_from_jid(myjid)
@@ -1111,11 +1138,9 @@ class XabberGroupsPlugin(GajimPlugin):
         account = get_account_from_jid(myjid)
         app.connections[account].connection.send(stanza_send, now=True)
 
-        # TODO StanzaReceivedEvent
 
     @log_calls('XabberGroupsPlugin')
     def connect_with_chat_control(self, chat_control):
-        # TODO send prezence to ask if data changed
         account = chat_control.contact.account.name
         room = chat_control.contact.jid
         acc_jid = app.get_jid_from_account(account)
@@ -1166,6 +1191,10 @@ class Base(object):
         self.cli_jid = app.get_jid_from_account(chat_control.contact.account.name)
         self.room_jid = chat_control.contact.jid
 
+        self.top_message_id = None
+        self.is_waiting_for_messages = True
+        self.xmam_loc_id = 0
+
         self.plugin = plugin
         self.textview = textview
         self.handlers = {}
@@ -1193,8 +1222,18 @@ class Base(object):
 
         self.textview.tv.add(self.scrolled)
         self.scrolled.size_allocate(self.textview.tv.get_allocation())
+        self.scrolled.connect_after('edge-reached', self.scrolled_changed)
 
         self.create_buttons(self.chat_control)
+
+    def scrolled_changed(self, widg, pos):
+        if (Gtk.PositionType(2) == pos) and not self.is_waiting_for_messages:
+            # todo ask for prevous messages
+            # self.top_message_id
+            self.last_message_date = None
+            self.plugin.send_ask_for_hisrory_when_top_reached(self.room_jid, self.cli_jid, self.top_message_id)
+            # send ask for prev messages
+            self.is_waiting_for_messages = True
 
     def resize(self, widget, r):
         self.normalize_action_hbox()
@@ -1220,7 +1259,7 @@ class Base(object):
             del self.handlers[i]
 
 
-    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp):
+    def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp, mam_loc):
 
         IS_FORWARD = False
         forward = None
@@ -1450,15 +1489,16 @@ class Base(object):
         self.current_message_id += 1
         Message_eventBox.connect('button-press-event', self.on_message_click, additional_data,
                                  self.current_message_id, simplegrid, timestamp, nickname, message)
-        Message_eventBox.connect('enter-notify-event', self.on_enter_event)
-        Message_eventBox.connect('leave-notify-event', self.on_leave_event)
 
         self.box.pack_start(simplegrid, False, False, 0)
+        if mam_loc:
+            self.box.reorder_child(simplegrid, self.xmam_loc_id)
+            self.xmam_loc_id+=1
         # set size of message by parent width after creating
         self.do_resize(simplegrid)
         simplegrid.show_all()
 
-    def print_server_info(self, real_text):
+    def print_server_info(self, real_text, mam_loc=False):
         server_info = Gtk.Label(real_text)
         css = '''#server_info {
         padding: 8px 0px;
@@ -1468,8 +1508,11 @@ class Base(object):
         server_info.set_name('server_info')
         self.box.pack_start(server_info, False, False, 0)
         server_info.show_all()
+        if mam_loc:
+            self.box.reorder_child(server_info, self.xmam_loc_id)
+            self.xmam_loc_id += 1
 
-    def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data):
+    def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data, mam_loc=False):
 
         print(additional_data)
         print(text_tags)
@@ -1503,7 +1546,7 @@ class Base(object):
                     self.previous_message_from = None
                     self.last_message_date = dtdate
                     dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
-                    self.print_server_info(dt.strftime("%A, %d %B, %Y"))
+                    self.print_server_info(dt.strftime("%A, %d %B, %Y"), mam_loc)
 
                 timestamp = dttime
             except: timestamp = '???'
@@ -1524,11 +1567,12 @@ class Base(object):
 
 
             if IS_MSG:
-                self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp)
+                self.print_message(SAME_FROM, nickname, message, role, badge, additional_data, timestamp, mam_loc)
             else:
                 self.print_server_info(real_text)
 
-            gtkgui_helpers.scroll_to_end(self.scrolled)
+            if not mam_loc:
+                gtkgui_helpers.scroll_to_end(self.scrolled)
 
 
 
@@ -1886,7 +1930,7 @@ class Base(object):
         self.pinned_message.pack_start(pinbutton, False, False, 0)
         chat_control_box = chat_control.xml.get_object('vbox2')
         chat_control_box.add(self.pinned_message)
-        chat_control_box.reorder_child(self.pinned_message, 2)
+        chat_control_box.reorder_child(self.pinned_message, 1)
 
         self.pinned_message.hide()
 
@@ -1984,9 +2028,10 @@ class Base(object):
         self.remove_message_selection()
         print('pin clicked')
         print(data)
-        try:
+        stanza_id = data[1]['forward']
+        if stanza_id:
             stanza_id = data[1]['forward']['stanza_id']
-        except:
+        else:
             stanza_id = data[1]['stanza_id']
 
         self.plugin.send_set_pinned_message(self.room_jid, self.cli_jid, stanza_id)
