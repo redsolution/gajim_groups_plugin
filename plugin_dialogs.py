@@ -1137,10 +1137,228 @@ class ChatEditDialog(Gtk.Dialog):
         self.plugin.send_ask_for_rights(self.myjid, room=self.room, id=u_id, type='XGCUserOptions')
 
     def on_close(self, eb=None, event=None):
-        print('well ok')
         del self.plugin.chat_edit_dialog_windows[self.room]
 
     def popup(self):
         vb = self.get_children()[0].get_children()[0]
         vb.grab_focus()
         self.show_all()
+
+
+
+class ChoseSendForwardTo(Gtk.Dialog):
+
+    def __init__(self, chat_control, plugin, default_avatar, messages):
+        gajimpaths = configpaths.gajimpaths
+        self.AVATAR_PATH = gajimpaths['AVATAR']
+        self.chat_control = chat_control
+        self.plugin = plugin
+        self.default_avatar = default_avatar
+        self.chosen_messages_data = messages
+        self.CHOOSED_USER = None
+        self.user_widgets = []
+
+        Gtk.Dialog.__init__(self, _('Forward'), None, 0)
+        self.set_default_size(400, 600)
+
+        self.search = Gtk.Entry()
+        self.search.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, 'system-search-symbolic')
+        self.search.set_placeholder_text(_('Search'))
+        self.search.set_margin_left(20)
+        self.search.set_margin_right(20)
+        self.search.set_margin_top(20)
+
+        # ============================== scroll window ============================== #
+        scrolled = Gtk.ScrolledWindow()
+        listbox = Gtk.ListBox()
+        listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        scrolled.add(listbox)
+        scrolled.set_margin_left(20)
+        scrolled.set_margin_right(20)
+        scrolled.set_margin_top(20)
+        scrolled.set_margin_bottom(20)
+
+        user_list = []
+
+        account = None
+        accounts = app.contacts.get_accounts()
+        for acc in accounts:
+            realjid = app.get_jid_from_account(acc)
+            realjid = app.get_jid_without_resource(str(realjid))
+            if self.chat_control.cli_jid == realjid:
+                account = acc
+
+        jids = app.contacts.get_contacts_jid_list(account)
+        for jid in jids:
+            jid = app.get_jid_without_resource(str(jid))
+            contact = app.contacts.get_contact_with_highest_priority(account, jid)
+            name = contact.get_shown_name()
+            if not name:
+                name = jid
+            if (name, jid) not in user_list:
+                avatar_sha = app.contacts.get_avatar_sha(account, jid)
+                user_list.append((name, jid, avatar_sha))
+
+
+        for data in user_list:
+            data_name = data[0]
+            data_jid = data[1]
+            avatar_sha = data[2]
+
+            if avatar_sha:
+                path = os.path.join(self.AVATAR_PATH, avatar_sha)
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 32, 32, False)
+                # pixbuf = Gdk.pixbuf_get_from_surface(pixbuf, 0, 0, 32, 32)
+            else:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(self.default_avatar, 32, 32, False)
+            image = Gtk.Image.new_from_pixbuf(pixbuf)
+            css = '''
+                #xavatar {}
+
+                #user_jid{
+                background: none;
+                font-size: 11px;
+                color: #9E9E9E;
+                }
+                #user_name{
+                color: #212121;
+                font-size: 16px;
+                background: none;
+                }
+                '''
+            gtkgui_helpers.add_css_to_widget(image, css)
+            image.set_name('xavatar')
+
+            name = Gtk.TextView()
+            name.get_buffer().set_text(data_name)
+            name.set_editable(False)
+            gtkgui_helpers.add_css_to_widget(name, css)
+            name.set_name('user_name')
+
+            jid = Gtk.TextView()
+            jid.get_buffer().set_text(data_jid)
+            jid.set_editable(False)
+            gtkgui_helpers.add_css_to_widget(jid, css)
+            jid.set_name('user_jid')
+
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            vbox.pack_start(name, False, True, 0)
+            vbox.pack_start(jid, False, True, 0)
+
+            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=50)
+            hbox.pack_start(image, False, False, 0)
+            hbox.pack_start(vbox, False, False, 0)
+            hbox.set_margin_top(4)
+            hbox.set_margin_bottom(4)
+
+            eventbox = Gtk.EventBox()
+            eventbox.connect('button-press-event', self.on_user_clicked, eventbox, data_jid)
+            eventbox.add(hbox)
+            name.show()
+            jid.show()
+            vbox.show()
+            eventbox.show()
+
+            listbox.add(eventbox)
+            self.user_widgets.append((eventbox, data_name, data_jid))
+
+        css = '''
+                            #Xbutton-redfont {
+                            color: #D32F2F;
+                            margin: 0 5px;
+                            padding: 0 10px;
+                            background-color: #FFFFFF;
+                            background: #FFFFFF;
+                            border: none;
+                            border-radius: 2px;
+                            font-size: 13px;
+                            font-weight: bold;
+                            }
+                            #Xbutton-redfont:hover{
+                            background-color: #E0E0E0;
+                            background: #E0E0E0;
+                            }
+                            '''
+        btn_fwd = Gtk.Button(_('Forward'))
+        btn_fwd.connect('button-press-event', self.on_forward_clicked)
+        gtkgui_helpers.add_css_to_widget(btn_fwd, css)
+        btn_fwd.set_name('Xbutton-redfont')
+        leftgrid = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        rightgrid = Gtk.Box()
+        leftgrid.pack_start(Gtk.Label(''), True, True, 0)
+        rightgrid.pack_start(btn_fwd, False, True, 0)
+
+        button_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        button_hbox.set_margin_bottom(10)
+        button_hbox.set_margin_left(20)
+        button_hbox.set_margin_right(20)
+        button_hbox.set_size_request(-1, 36)
+
+        button_hbox.pack_start(leftgrid, True, True, 0)
+        button_hbox.pack_start(rightgrid, False, True, 0)
+
+        box = self.get_content_area()
+        box.pack_start(self.search, False, True, 0)
+        box.pack_start(scrolled, True, True, 0)
+        box.pack_start(button_hbox, False, True, 0)
+
+        self.search.connect("changed", self.edit_changed)
+
+    def on_forward_clicked(self, eb, event):
+        print('forward')
+        print(self.CHOOSED_USER)
+
+        # self, additional_data, tojid, myjid, room, body
+        for message in self.chosen_messages_data:
+            if message[1]['forward']:
+                self.plugin.send_forward_message(message[1]['forward'],
+                                                 self.CHOOSED_USER,
+                                                 self.chat_control.cli_jid,
+                                                 self.chat_control.room_jid,
+                                                 message[4])
+            else:
+                self.plugin.send_forward_message(message[1],
+                                                 self.CHOOSED_USER,
+                                                 self.chat_control.cli_jid,
+                                                 self.chat_control.room_jid,
+                                                 message[4])
+
+        self.chat_control.remove_message_selection()
+        self.destroy()
+
+    def edit_changed(self, widget):
+        s = self.search.get_text()
+        for widget in self.user_widgets:
+            if s.lower() in widget[1].lower() or s.lower() in widget[2].lower():
+                widget[0].show()
+            else:
+                widget[0].hide()
+
+    def on_user_clicked(self, eb, event, widget, jid):
+        css = '''
+        #choosed {
+        background-color: #FFCCCC;
+        }
+        #nonchoosed {}
+        '''
+        # left click
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
+            if jid == self.CHOOSED_USER:
+                gtkgui_helpers.add_css_to_widget(widget, css)
+                widget.set_name('nonchoosed')
+                self.CHOOSED_USER = None
+            else:
+                for wid in self.user_widgets:
+                    wid = wid[0]
+                    gtkgui_helpers.add_css_to_widget(wid, css)
+                    wid.set_name('nonchoosed')
+                gtkgui_helpers.add_css_to_widget(widget, css)
+                widget.set_name('choosed')
+                self.CHOOSED_USER = jid
+
+    def popup(self):
+        vb = self.get_children()[0].get_children()[0]
+        vb.grab_focus()
+        self.show_all()
+
+

@@ -5,7 +5,8 @@ import nbxmpp
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango, Gio
-from groups_plugin.plugin_dialogs import UserDataDialog, CreateGroupchatDialog, InviteMemberDialog, ChatEditDialog
+from groups_plugin.plugin_dialogs import UserDataDialog, CreateGroupchatDialog, \
+    InviteMemberDialog, ChatEditDialog, ChoseSendForwardTo
 from nbxmpp import simplexml
 from nbxmpp.protocol import JID
 from gajim import dialogs
@@ -195,6 +196,23 @@ class XabberGroupsPlugin(GajimPlugin):
                 image = Gtk.Image.new_from_pixbuf(pixbuf)
                 roster.model[iter_][0] = image
 
+
+    @log_calls('XabberGroupsPlugin')
+    def send_forward_message(self, additional_data, tojid, myjid, room, body):
+        stanza_send = nbxmpp.Message(to=tojid, typ='chat')
+        stanza_send.setTag('body').setData(body)
+        forwarded = stanza_send.setTag('forwarded', namespace='urn:xmpp:forward:0')
+        forwarded.setPayload(additional_data['stanza'])
+        forwarded.setTag('delay', namespace='urn:xmpp:delay').setAttr('stamp', additional_data['ts'])
+        account = get_account_from_jid(myjid)
+        app.connections[account].connection.send(stanza_send, now=True)
+
+        try:
+            self.controls[account][tojid].print_from_me(additional_data)
+        except: pass
+
+        # print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp, mam_loc):
+
     @log_calls('XabberGroupsPlugin')
     def _nec_message_outgoing(self, obj):
         to_jid = obj.jid
@@ -211,7 +229,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                         'message': obj.message,
                                         'ts': datetime.datetime.now().isoformat(),
                                         'stanza_id': obj.stanza_id,
-                                        'forward': None
+                                        'forward': None,
+                                        'stanza': None
                                         })
             self.nonupdated_stanza_id_messages[obj.stanza_id] = obj
 
@@ -817,7 +836,6 @@ class XabberGroupsPlugin(GajimPlugin):
                 print(origin_id)
                 print(stanza_id)
                 self.nonupdated_stanza_id_messages[origin_id].additional_data['stanza_id'] = stanza_id
-                # TODO upload additional data
                 del self.nonupdated_stanza_id_messages[origin_id]
             return
 
@@ -843,7 +861,10 @@ class XabberGroupsPlugin(GajimPlugin):
         except: pass
 
         # forwarded
-        if obj.stanza.getTag('result', namespace='urn:xmpp:mam:2').getAttr('queryid') == 'XMAMessage':
+        try:
+            is_fw = obj.stanza.getTag('result', namespace='urn:xmpp:mam:2').getAttr('queryid') == 'XMAMessage'
+        except: is_fw = False
+        if is_fw:
             room = obj.stanza.getAttr('from')
             myjid = obj.stanza.getAttr('to')
             account = get_account_from_jid(myjid)
@@ -870,7 +891,10 @@ class XabberGroupsPlugin(GajimPlugin):
             role = message.getTag('x', namespace=XABBER_GC).getTag('role').getData()
             badge = message.getTag('x', namespace=XABBER_GC).getTag('badge').getData()
 
-            forwarded = message.getTag('origin-id', namespace='urn:xmpp:sid:0').getTag('forwarded', namespace='urn:xmpp:forward:0')
+            try:
+                forwarded = message.getTag('origin-id', namespace='urn:xmpp:sid:0').getTag('forwarded', namespace='urn:xmpp:forward:0')
+            except:
+                forwarded = message.getTag('forwarded', namespace='urn:xmpp:forward:0')
 
             forward_m = None
             if forwarded:
@@ -916,7 +940,8 @@ class XabberGroupsPlugin(GajimPlugin):
                              'role': frole,
                              'badge': fbadge,
                              'ts': delay,
-                             'stanza_id': fstanza_id
+                             'stanza_id': fstanza_id,
+                             'stanza': fobj
                              }
 
             stanza_id = message.getTag('stanza-id').getAttr('id')
@@ -930,7 +955,8 @@ class XabberGroupsPlugin(GajimPlugin):
                                'badge': badge,
                                'forward': forward_m,
                                'stanza_id': stanza_id,
-                               'ts': timestamp
+                               'ts': timestamp,
+                               'stanza': message
                                }
             self.controls[account][room].print_real_text('', [], False, None, additional_data, mam_loc=True)
 
@@ -1228,7 +1254,6 @@ class Base(object):
 
     def scrolled_changed(self, widg, pos):
         if (Gtk.PositionType(2) == pos) and not self.is_waiting_for_messages:
-            # todo ask for prevous messages
             # self.top_message_id
             self.last_message_date = None
             self.plugin.send_ask_for_hisrory_when_top_reached(self.room_jid, self.cli_jid, self.top_message_id)
@@ -1574,6 +1599,40 @@ class Base(object):
             if not mam_loc:
                 gtkgui_helpers.scroll_to_end(self.scrolled)
 
+    def print_from_me(self, additional_data):
+        print('print_from_me\n'*10)
+        SAME_FROM = False
+        mam_loc = False
+
+        nickname = self.plugin.userdata[self.room_jid][self.cli_jid]['nickname']
+        message = ''
+        role = self.plugin.userdata[self.room_jid][self.cli_jid]['role']
+        badge = self.plugin.userdata[self.room_jid][self.cli_jid]['badge']
+        if self.previous_message_from == self.plugin.userdata[self.room_jid][self.cli_jid]['id']:
+            SAME_FROM = True
+        self.previous_message_from = self.plugin.userdata[self.room_jid][self.cli_jid]['id']
+
+        try:
+            timestamp = str(datetime.datetime.now().isoformat())
+            dtdate = timestamp.split('T')[0]
+            dtdate = str(dtdate)[2:10]
+            dttime = timestamp.split('T')[1]
+            dttime = dttime[:8]
+            if dtdate != self.last_message_date:
+                self.previous_message_from = None
+                self.last_message_date = dtdate
+                dt = datetime.datetime.strptime(dtdate, "%y-%m-%d")
+                self.print_server_info(dt.strftime("%A, %d %B, %Y"), mam_loc)
+            timestamp = dttime
+        except:
+            timestamp = '???'
+
+        self.print_message(SAME_FROM, nickname, message, role, badge,
+                           {'forward': additional_data,
+                            'ts': timestamp
+                            }, timestamp, mam_loc)
+
+        gtkgui_helpers.scroll_to_end(self.scrolled)
 
 
 
@@ -2058,7 +2117,19 @@ class Base(object):
         self.remove_message_selection()
 
     def on_forward_clicked(self, widget):
+        dialog = ChoseSendForwardTo(self,
+                                    self.plugin,
+                                    self.default_avatar,
+                                    self.chosen_messages_data)
+        response = dialog.popup()
         print('forward clicked!')
 
     def on_reply_clicked(self, widget):
+        # send_forward_message(self, additional_data, tojid, myjid):
+        for message in self.chosen_messages_data:
+            if message[1]['forward']:
+                self.plugin.send_forward_message(message[1]['forward'], self.room_jid, self.cli_jid, self.room_jid, message[4])
+            else:
+                self.plugin.send_forward_message(message[1], self.room_jid, self.cli_jid, self.room_jid, message[4])
+        self.remove_message_selection()
         print('reply clicked!')
