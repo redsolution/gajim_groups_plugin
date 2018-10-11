@@ -1079,6 +1079,7 @@ class XabberGroupsPlugin(GajimPlugin):
                 frole = role
                 fbadge = badge
 
+
             forward_m = {'jid': fjid,
                          'nickname': fname,
                          'message': fmessage,
@@ -1087,7 +1088,8 @@ class XabberGroupsPlugin(GajimPlugin):
                          'role': frole,
                          'badge': fbadge,
                          'ts': delay,
-                         'stanza_id': fstanza_id
+                         'stanza_id': fstanza_id,
+                         'stanza': fobj
             }
 
         obj.additional_data.update({'jid': jid,
@@ -1194,7 +1196,6 @@ class XabberGroupsPlugin(GajimPlugin):
     def disconnect_from_chat_control(self, chat_control):
         account = chat_control.contact.account.name
         jid = chat_control.contact.jid
-        self.controls[account][jid].deinit_handlers()
         del self.controls[account][jid]
 
     @log_calls('XabberGroupsPlugin')
@@ -1223,7 +1224,6 @@ class Base(object):
 
         self.plugin = plugin
         self.textview = textview
-        self.handlers = {}
         self.chat_control = chat_control
         self.default_avatar = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default.png")
         # self.default_avatar = base64.encodestring(open(default_avatar, "rb").read())
@@ -1275,13 +1275,6 @@ class Base(object):
         messagebox.set_size_request(w, -1)
         messagebox.get_children()[2].set_size_request(w - (64+95), -1)
 
-    def deinit_handlers(self):
-        # remove all register handlers on wigets, created by self.xml
-        # to prevent circular references among objects
-        for i in list(self.handlers.keys()):
-            if self.handlers[i].handler_is_connected(i):
-                self.handlers[i].disconnect(i)
-            del self.handlers[i]
 
 
     def print_message(self, SAME_FROM, nickname, message, role, badge, additional_data, timestamp, mam_loc):
@@ -1629,7 +1622,7 @@ class Base(object):
 
         self.print_message(SAME_FROM, nickname, message, role, badge,
                            {'forward': additional_data,
-                            'ts': timestamp
+                            'ts': str(datetime.datetime.now().isoformat())
                             }, timestamp, mam_loc)
 
         gtkgui_helpers.scroll_to_end(self.scrolled)
@@ -1815,36 +1808,31 @@ class Base(object):
 
         self.button_forward = Gtk.Button(label='FORWARD', stock=None, use_underline=False)
         self.button_forward.set_tooltip_text(_('resend printed messages for someone'))
-        id_ = self.button_forward.connect('clicked', self.on_forward_clicked)
-        chat_control.handlers[id_] = self.button_forward
+        self.button_forward.connect('clicked', self.on_forward_clicked)
         gtkgui_helpers.add_css_to_widget(self.button_forward, css)
         self.button_forward.set_name('Xbutton')
 
         self.button_reply = Gtk.Button(label='REPLY', stock=None, use_underline=False)
         self.button_reply.set_tooltip_text(_('resend printed messages for this user'))
-        id_ = self.button_reply.connect('clicked', self.on_reply_clicked)
-        chat_control.handlers[id_] = self.button_reply
+        self.button_reply.connect('clicked', self.on_reply_clicked)
         gtkgui_helpers.add_css_to_widget(self.button_reply, css)
         self.button_reply.set_name('Xbutton')
 
         self.button_copy = Gtk.Button(label='COPY', stock=None, use_underline=False)
         self.button_copy.set_tooltip_text(_('copy text from messages widgets (press ctrl+v to paste it)'))
-        id_ = self.button_copy.connect('clicked', self.on_copytext_clicked)
-        chat_control.handlers[id_] = self.button_copy
+        self.button_copy.connect('clicked', self.on_copytext_clicked)
         gtkgui_helpers.add_css_to_widget(self.button_copy, css)
         self.button_copy.set_name('XCbutton')
 
         self.button_pin = Gtk.Button(label='PIN', stock=None, use_underline=False)
         self.button_pin.set_tooltip_text(_('pin message'))
-        id_ = self.button_pin.connect('clicked', self.on_pin_clicked)
-        chat_control.handlers[id_] = self.button_pin
+        self.button_pin.connect('clicked', self.on_pin_clicked)
         gtkgui_helpers.add_css_to_widget(self.button_pin, css)
         self.button_pin.set_name('XCbutton')
 
         self.button_cancel = Gtk.Button(label='CANCEL', stock=None, use_underline=False)
         self.button_cancel.set_tooltip_text(_('clear selection'))
-        id_ = self.button_cancel.connect('clicked', self.remove_message_selection)
-        chat_control.handlers[id_] = self.button_cancel
+        self.button_cancel.connect('clicked', self.remove_message_selection)
         gtkgui_helpers.add_css_to_widget(self.button_cancel, css)
         self.button_cancel.set_name('XCbutton')
 
@@ -1903,8 +1891,8 @@ class Base(object):
         topmenu = chat_control.xml.get_object('hbox3004')
         group_chat_menubutton = Gtk.Button()
         file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
-        file = os.path.join(file, 'icon-menu-alt.png')
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 16, 16, False)
+        file = os.path.join(file, 'dots-vertical.svg')
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 20, 20, False)
         image = Gtk.Image.new_from_pixbuf(pixbuf)
         group_chat_menubutton.add(image)
         group_chat_menubutton.connect('clicked', self.do_open_chat_editor_dialog)
@@ -1926,9 +1914,16 @@ class Base(object):
         gtkgui_helpers.add_css_to_widget(group_chat_add_user, css_button)
         group_chat_add_user.set_name('XGCmenubutton')
 
-        # ========================== pinned message  ========================== #
+        # banner_name_label
+        # banner_label
 
+        # ========================== pinned message  ========================== #
+        css = '''#pinned_message_box {
+        border-bottom: 1px double #ccc;
+        }'''
         self.pinned_message = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        gtkgui_helpers.add_css_to_widget(self.pinned_message, css)
+        self.pinned_message.set_name('pinned_message_box')
 
         pinned_name_badge_role = Gtk.Grid()
         self.pinned_nick = Gtk.Label('nickname')
@@ -1989,7 +1984,7 @@ class Base(object):
         self.pinned_message.pack_start(pinbutton, False, False, 0)
         chat_control_box = chat_control.xml.get_object('vbox2')
         chat_control_box.add(self.pinned_message)
-        chat_control_box.reorder_child(self.pinned_message, 1)
+        chat_control_box.reorder_child(self.pinned_message, 2)
 
         self.pinned_message.hide()
 
@@ -2092,10 +2087,7 @@ class Base(object):
             stanza_id = data[1]['forward']['stanza_id']
         else:
             stanza_id = data[1]['stanza_id']
-
         self.plugin.send_set_pinned_message(self.room_jid, self.cli_jid, stanza_id)
-
-
 
     def on_copytext_clicked(self, widget):
         copied_text = ''
@@ -2125,11 +2117,18 @@ class Base(object):
         print('forward clicked!')
 
     def on_reply_clicked(self, widget):
-        # send_forward_message(self, additional_data, tojid, myjid):
         for message in self.chosen_messages_data:
             if message[1]['forward']:
-                self.plugin.send_forward_message(message[1]['forward'], self.room_jid, self.cli_jid, self.room_jid, message[4])
+                self.plugin.send_forward_message(message[1]['forward'],
+                                                 self.room_jid,
+                                                 self.cli_jid,
+                                                 self.room_jid,
+                                                 '>' + message[3] + '\n>' + message[4])
             else:
-                self.plugin.send_forward_message(message[1], self.room_jid, self.cli_jid, self.room_jid, message[4])
+                self.plugin.send_forward_message(message[1],
+                                                 self.room_jid,
+                                                 self.cli_jid,
+                                                 self.room_jid,
+                                                 '>'+message[3]+'\n>'+message[4])
         self.remove_message_selection()
         print('reply clicked!')

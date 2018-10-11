@@ -1315,13 +1315,13 @@ class ChoseSendForwardTo(Gtk.Dialog):
                                                  self.CHOOSED_USER,
                                                  self.chat_control.cli_jid,
                                                  self.chat_control.room_jid,
-                                                 message[4])
+                                                 '>' + message[3] + '\n>' + message[4])
             else:
                 self.plugin.send_forward_message(message[1],
                                                  self.CHOOSED_USER,
                                                  self.chat_control.cli_jid,
                                                  self.chat_control.room_jid,
-                                                 message[4])
+                                                 '>' + message[3] + '\n>' + message[4])
 
         self.chat_control.remove_message_selection()
         self.destroy()
