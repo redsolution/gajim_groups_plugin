@@ -1917,14 +1917,6 @@ class Base(object):
         '''
 
         topmenu = chat_control.xml.get_object('hbox3004')
-        group_chat_menubutton = Gtk.Button()
-        file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
-        file = os.path.join(file, 'dots-vertical.svg')
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 20, 20, False)
-        image = Gtk.Image.new_from_pixbuf(pixbuf)
-        group_chat_menubutton.add(image)
-        group_chat_menubutton.connect('clicked', self.do_open_chat_editor_dialog)
-        topmenu.add(group_chat_menubutton)
 
         group_chat_add_user = Gtk.Button()
         file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
@@ -1934,6 +1926,15 @@ class Base(object):
         group_chat_add_user.add(image)
         group_chat_add_user.connect('clicked', self.do_invite_member_dialog)
         topmenu.add(group_chat_add_user)
+
+        group_chat_menubutton = Gtk.Button()
+        file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+        file = os.path.join(file, 'dots-vertical.svg')
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, 20, 20, False)
+        image = Gtk.Image.new_from_pixbuf(pixbuf)
+        group_chat_menubutton.add(image)
+        group_chat_menubutton.connect('clicked', self.do_open_chat_editor_dialog)
+        topmenu.add(group_chat_menubutton)
 
         group_chat_menubutton.set_size_request(48, -1)
         group_chat_add_user.set_size_request(48, -1)
