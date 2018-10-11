@@ -501,9 +501,7 @@ class XabberGroupsPlugin(GajimPlugin):
             acc = get_account_from_jid(myjid)
             room = obj.stanza.getAttr('from')
             top_message_id = on_messages_fin_get.getTag('set', namespace='http://jabber.org/protocol/rsm').getTag('first').getData()
-            self.controls[acc][room].top_message_id = top_message_id
-            self.controls[acc][room].is_waiting_for_messages = False
-            self.controls[acc][room].xmam_loc_id = 0
+            self.controls[acc][room].show_all_xmam(top_message_id)
 
         # XGCBlockUser
         # XGCKickUser
@@ -1222,6 +1220,8 @@ class Base(object):
         self.is_waiting_for_messages = True
         self.xmam_loc_id = 0
 
+        self.hidden_messages = []
+
         self.plugin = plugin
         self.textview = textview
         self.chat_control = chat_control
@@ -1251,6 +1251,29 @@ class Base(object):
         self.scrolled.connect_after('edge-reached', self.scrolled_changed)
 
         self.create_buttons(self.chat_control)
+
+    def show_all_xmam(self, top_message_id):
+        self.top_message_id = top_message_id
+        self.is_waiting_for_messages = False
+        self.xmam_loc_id = 0
+        sum = 0
+        inc = self.scrolled.get_vadjustment().get_step_increment()
+        for m in self.hidden_messages:
+            try: self.do_resize(m)
+            except: pass
+            m.show_all()
+            self.hidden_messages.remove(m)
+            delta_height = m.get_preferred_height()[1]
+            print(delta_height)
+            sum += delta_height
+            self.scrolled.get_vadjustment().set_value(delta_height + self.scrolled.get_vadjustment().get_value())
+            # set_value()
+
+            # self.scrolled.set_vadjustment(delta_height)
+        print(sum)
+        print(self.scrolled.get_vadjustment().get_value())
+        print(self.scrolled.get_vadjustment().get_step_increment())
+        print(self.scrolled.get_vadjustment().get_page_size())
 
     def scrolled_changed(self, widg, pos):
         if (Gtk.PositionType(2) == pos) and not self.is_waiting_for_messages:
@@ -1512,9 +1535,12 @@ class Base(object):
         if mam_loc:
             self.box.reorder_child(simplegrid, self.xmam_loc_id)
             self.xmam_loc_id+=1
-        # set size of message by parent width after creating
-        self.do_resize(simplegrid)
-        simplegrid.show_all()
+            self.hidden_messages.append(simplegrid)
+
+        else:
+            # set size of message by parent width after creating
+            self.do_resize(simplegrid)
+            simplegrid.show_all()
 
     def print_server_info(self, real_text, mam_loc=False):
         server_info = Gtk.Label(real_text)
@@ -1525,10 +1551,12 @@ class Base(object):
         gtkgui_helpers.add_css_to_widget(server_info, css)
         server_info.set_name('server_info')
         self.box.pack_start(server_info, False, False, 0)
-        server_info.show_all()
         if mam_loc:
             self.box.reorder_child(server_info, self.xmam_loc_id)
             self.xmam_loc_id += 1
+            self.hidden_messages.append(server_info)
+        else:
+            server_info.show_all()
 
     def print_real_text(self, real_text, text_tags, graphics, iter_, additional_data, mam_loc=False):
 
